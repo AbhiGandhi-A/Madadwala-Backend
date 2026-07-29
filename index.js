@@ -198,7 +198,7 @@ app.post('/api/users/register', upload.fields([
             email,
             profileImage: profileImageUrl,
             aadhaarImage: aadhaarImageUrl,
-            isVerified: role === 'customer' // Customers verified by default, providers need admin check
+            isVerified: role === 'customer' // Customers verified by default
         });
 
         await newUser.save();
@@ -211,7 +211,7 @@ app.post('/api/users/register', upload.fields([
                 category: req.body.category || 'Other',
                 startingPrice: req.body.startingPrice || 0,
                 bio: req.body.bio || '',
-                isVerified: false
+                isVerified: false // Explicitly false for new providers
             });
             await newProvider.save();
         }
@@ -233,11 +233,34 @@ app.get('/api/categories', async (req, res) => {
     }
 });
 
-// Providers by Category
+// Admin: Get all pending providers
+app.get('/api/admin/pending-providers', async (req, res) => {
+    try {
+        const pendingUsers = await User.find({ role: 'provider', isVerified: false });
+        res.json(pendingUsers);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Admin: Approve provider
+app.post('/api/admin/approve-provider', async (req, res) => {
+    const { uid } = req.body;
+    try {
+        await User.findOneAndUpdate({ uid }, { isVerified: true });
+        await Provider.findOneAndUpdate({ uid }, { isVerified: true });
+        res.json({ message: 'Provider approved successfully' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Update provider list for customers to only see verified ones
 app.get('/api/providers', async (req, res) => {
     const { category } = req.query;
     try {
-        const query = category ? { category } : {};
+        const query = { isVerified: true };
+        if (category) query.category = category;
         const providers = await Provider.find(query);
         res.json(providers);
     } catch (error) {
