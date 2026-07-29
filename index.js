@@ -77,9 +77,15 @@ const verifyToken = async (req, res, next) => {
 
 // Check if user exists
 app.get('/api/users/check', async (req, res) => {
-    const { phoneNumber } = req.query;
+    const { phoneNumber, uid } = req.query;
     try {
-        const user = await User.findOne({ phoneNumber });
+        let user;
+        if (uid) {
+            user = await User.findOne({ uid });
+        } else if (phoneNumber) {
+            user = await User.findOne({ phoneNumber });
+        }
+
         if (user) {
             res.json({ exists: true, user });
         } else {
