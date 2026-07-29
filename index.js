@@ -56,11 +56,23 @@ const userSchema = new mongoose.Schema({
     profileImage: String,
     aadhaarImage: String,
     category: String,
+    walletBalance: { type: Number, default: 0 },
     isVerified: { type: Boolean, default: false },
     createdAt: { type: Date, default: Date.now }
 });
 
 const User = mongoose.model('User', userSchema);
+
+// Transaction Schema
+const transactionSchema = new mongoose.Schema({
+    userUid: { type: String, required: true },
+    type: { type: String, enum: ['credit', 'debit'], required: true },
+    amount: { type: Number, required: true },
+    title: { type: String, required: true },
+    description: String,
+    createdAt: { type: Date, default: Date.now }
+});
+const Transaction = mongoose.model('Transaction', transactionSchema);
 
 // Category Schema
 const categorySchema = new mongoose.Schema({
@@ -230,6 +242,16 @@ app.get('/api/categories', async (req, res) => {
     try {
         const categories = await Category.find();
         res.json(categories);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Wallet & Transactions
+app.get('/api/wallet/transactions/:uid', async (req, res) => {
+    try {
+        const transactions = await Transaction.find({ userUid: req.params.uid }).sort({ createdAt: -1 });
+        res.json(transactions);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
