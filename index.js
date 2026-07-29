@@ -55,6 +55,7 @@ const userSchema = new mongoose.Schema({
     email: String,
     profileImage: String,
     aadhaarImage: String,
+    category: String,
     isVerified: { type: Boolean, default: false },
     createdAt: { type: Date, default: Date.now }
 });
@@ -198,6 +199,7 @@ app.post('/api/users/register', upload.fields([
             email,
             profileImage: profileImageUrl,
             aadhaarImage: aadhaarImageUrl,
+            category: req.body.category,
             isVerified: role === 'customer' // Customers verified by default
         });
 
