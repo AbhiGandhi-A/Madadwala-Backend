@@ -233,6 +233,44 @@ app.get('/api/categories', async (req, res) => {
     }
 });
 
+// Admin: Get analytics
+app.get('/api/admin/analytics', async (req, res) => {
+    try {
+        const totalUsers = await User.countDocuments({ role: 'customer' });
+        const totalProviders = await User.countDocuments({ role: 'provider', isVerified: true });
+        const totalBookings = await Booking.countDocuments();
+
+        // Calculate total revenue from completed bookings
+        const revenueResult = await Booking.aggregate([
+            { $match: { status: 'done' } },
+            { $group: { _id: null, total: { $sum: '$totalAmount' } } }
+        ]);
+        const totalRevenue = revenueResult.length > 0 ? revenueResult[0].total : 0;
+
+        // Get category distribution
+        const categoryStats = await Provider.aggregate([
+            { $match: { isVerified: true } },
+            { $group: { _id: '$category', count: { $sum: 1 } } }
+        ]);
+
+        const totalVerifiedProviders = totalProviders || 1; // Avoid division by zero
+        const categories = categoryStats.map(stat => ({
+            name: stat._id,
+            ratio: stat.count / totalVerifiedProviders
+        }));
+
+        res.json({
+            totalUsers,
+            totalProviders,
+            totalBookings,
+            totalRevenue,
+            categories
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Admin: Get all pending providers
 app.get('/api/admin/pending-providers', async (req, res) => {
     try {
