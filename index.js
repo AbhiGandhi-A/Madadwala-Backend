@@ -61,6 +61,64 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model('User', userSchema);
 
+// Category Schema
+const categorySchema = new mongoose.Schema({
+    name: { type: String, required: true },
+    icon: String,
+    image: String
+});
+const Category = mongoose.model('Category', categorySchema);
+
+// Provider Schema (Extended from User)
+const providerSchema = new mongoose.Schema({
+    uid: { type: String, required: true, unique: true },
+    name: String,
+    rating: { type: Number, default: 0 },
+    reviewCount: { type: Number, default: 0 },
+    distance: String,
+    startingPrice: Number,
+    category: String,
+    bio: String,
+    gallery: [String],
+    isVerified: { type: Boolean, default: false }
+});
+const Provider = mongoose.model('Provider', providerSchema);
+
+// Service Schema
+const serviceSchema = new mongoose.Schema({
+    providerUid: String,
+    name: String,
+    price: Number,
+    description: String
+});
+const Service = mongoose.model('Service', serviceSchema);
+
+// Booking Schema
+const bookingSchema = new mongoose.Schema({
+    customerUid: String,
+    providerUid: String,
+    serviceName: String,
+    status: { type: String, enum: ['pending', 'accepted', 'on_the_way', 'arrived', 'in_progress', 'done', 'cancelled'], default: 'pending' },
+    address: String,
+    scheduledTime: Date,
+    totalAmount: Number,
+    paymentStatus: { type: String, enum: ['pending', 'paid'], default: 'pending' },
+    createdAt: { type: Date, default: Date.now }
+});
+const Booking = mongoose.model('Booking', bookingSchema);
+
+// Review Schema
+const reviewSchema = new mongoose.Schema({
+    bookingId: String,
+    providerUid: String,
+    customerUid: String,
+    customerName: String,
+    rating: Number,
+    comment: String,
+    createdAt: { type: Date, default: Date.now }
+});
+const Review = mongoose.model('Review', reviewSchema);
+
 // Middleware to verify Firebase ID Token
 const verifyToken = async (req, res, next) => {
     const idToken = req.headers.authorization?.split('Bearer ')[1];
@@ -144,9 +202,106 @@ app.post('/api/users/register', upload.fields([
         });
 
         await newUser.save();
+
+        // If user is a provider, create Provider entry
+        if (role === 'provider') {
+            const newProvider = new Provider({
+                uid,
+                name,
+                category: req.body.category || 'Other',
+                startingPrice: req.body.startingPrice || 0,
+                bio: req.body.bio || '',
+                isVerified: false
+            });
+            await newProvider.save();
+        }
+
         res.status(201).json(newUser);
     } catch (error) {
         console.error('Registration error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Categories
+app.get('/api/categories', async (req, res) => {
+    try {
+        const categories = await Category.find();
+        res.json(categories);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Providers by Category
+app.get('/api/providers', async (req, res) => {
+    const { category } = req.query;
+    try {
+        const query = category ? { category } : {};
+        const providers = await Provider.find(query);
+        res.json(providers);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Provider Details
+app.get('/api/providers/:uid', async (req, res) => {
+    try {
+        const provider = await Provider.findOne({ uid: req.params.uid });
+        const services = await Service.find({ providerUid: req.params.uid });
+        const reviews = await Review.find({ providerUid: req.params.uid });
+        res.json({ provider, services, reviews });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Bookings
+app.post('/api/bookings', async (req, res) => {
+    try {
+        const newBooking = new Booking(req.body);
+        await newBooking.save();
+        res.status(201).json(newBooking);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/bookings/customer/:uid', async (req, res) => {
+    try {
+        const bookings = await Booking.find({ customerUid: req.params.uid }).sort({ createdAt: -1 });
+        res.json(bookings);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/bookings/:id', async (req, res) => {
+    try {
+        const booking = await Booking.findById(req.params.id);
+        res.json(booking);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Reviews
+app.post('/api/reviews', async (req, res) => {
+    try {
+        const newReview = new Review(req.body);
+        await newReview.save();
+
+        // Update provider rating
+        const reviews = await Review.find({ providerUid: req.body.providerUid });
+        const avgRating = reviews.reduce((acc, curr) => acc + curr.rating, 0) / reviews.length;
+        await Provider.findOneAndUpdate(
+            { uid: req.body.providerUid },
+            { rating: avgRating, reviewCount: reviews.length }
+        );
+
+        res.status(201).json(newReview);
+    } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
