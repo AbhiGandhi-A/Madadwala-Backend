@@ -56,6 +56,10 @@ const userSchema = new mongoose.Schema({
     profileImage: String,
     aadhaarImage: String,
     category: String,
+    profession: String,
+    panNumber: String,
+    aadhaarNumber: String,
+    verificationDate: String,
     walletBalance: { type: Number, default: 0 },
     isVerified: { type: Boolean, default: false },
     createdAt: { type: Date, default: Date.now }
