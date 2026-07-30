@@ -150,6 +150,8 @@ const customRequestSchema = new mongoose.Schema({
     minPrice: Number,
     maxPrice: Number,
     isAutoPrice: { type: Boolean, default: false },
+    lat: Number,
+    lng: Number,
     status: { type: String, enum: ['pending', 'accepted', 'rejected', 'completed'], default: 'pending' },
     bids: [{
         providerUid: String,
@@ -429,7 +431,9 @@ app.post('/api/custom-requests/:id/direct-accept', async (req, res) => {
             address: "Customer Location",
             scheduledTime: new Date(),
             totalAmount: price,
-            otp: otp
+            otp: otp,
+            customerLat: customReq.lat,
+            customerLng: customReq.lng
         });
         await newBooking.save();
 
@@ -602,7 +606,9 @@ app.post('/api/custom-requests/:id/accept-bid', async (req, res) => {
             address: "Customer Location", // In real app, get from customer
             scheduledTime: new Date(),
             totalAmount: price,
-            otp: otp
+            otp: otp,
+            customerLat: customReq.lat,
+            customerLng: customReq.lng
         });
         await newBooking.save();
 
@@ -635,7 +641,9 @@ app.post('/api/custom-requests/:id/direct-accept', async (req, res) => {
             address: "Customer Location",
             scheduledTime: new Date(),
             totalAmount: price,
-            otp: otp
+            otp: otp,
+            customerLat: customReq.lat,
+            customerLng: customReq.lng
         });
         await newBooking.save();
 
