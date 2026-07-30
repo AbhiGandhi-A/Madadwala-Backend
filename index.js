@@ -427,6 +427,16 @@ app.get('/api/bookings/:id', async (req, res) => {
     }
 });
 
+app.patch('/api/bookings/:id', async (req, res) => {
+    try {
+        const { status } = req.body;
+        await Booking.findByIdAndUpdate(req.params.id, { status });
+        res.json({ message: 'Booking status updated' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Reviews
 app.post('/api/reviews', async (req, res) => {
     try {
