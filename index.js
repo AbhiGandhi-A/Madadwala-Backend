@@ -460,6 +460,16 @@ app.get('/api/custom-requests', async (req, res) => {
     }
 });
 
+app.patch('/api/custom-requests/:id/status', async (req, res) => {
+    try {
+        const { status } = req.body;
+        await CustomRequest.findByIdAndUpdate(req.params.id, { status });
+        res.json({ message: 'Status updated' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 const PORT = process.env.PORT || 3000;
 if (process.env.NODE_ENV !== 'production') {
     app.listen(PORT, () => {
