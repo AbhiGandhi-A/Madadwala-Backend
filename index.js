@@ -120,7 +120,7 @@ const bookingSchema = new mongoose.Schema({
     serviceName: String,
     status: { type: String, enum: ['pending', 'accepted', 'on_the_way', 'arrived', 'in_progress', 'done', 'cancelled'], default: 'pending' },
     address: String,
-    scheduledTime: Date,
+    scheduledTime: String,
     totalAmount: Number,
     paymentStatus: { type: String, enum: ['pending', 'paid'], default: 'pending' },
     otp: { type: String, required: true },
