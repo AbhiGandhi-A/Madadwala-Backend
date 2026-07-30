@@ -145,7 +145,14 @@ const customRequestSchema = new mongoose.Schema({
     minPrice: Number,
     maxPrice: Number,
     isAutoPrice: { type: Boolean, default: false },
-    status: { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' },
+    status: { type: String, enum: ['pending', 'accepted', 'rejected', 'completed'], default: 'pending' },
+    bids: [{
+        providerUid: String,
+        providerName: String,
+        price: Number,
+        createdAt: { type: Date, default: Date.now }
+    }],
+    acceptedProviderUid: String,
     createdAt: { type: Date, default: Date.now }
 });
 const CustomRequest = mongoose.model('CustomRequest', customRequestSchema);
@@ -460,11 +467,62 @@ app.get('/api/custom-requests', async (req, res) => {
     }
 });
 
+app.get('/api/custom-requests/customer/:uid', async (req, res) => {
+    try {
+        const requests = await CustomRequest.find({ customerUid: req.params.uid }).sort({ createdAt: -1 });
+        res.json(requests);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.patch('/api/custom-requests/:id/status', async (req, res) => {
     try {
         const { status } = req.body;
         await CustomRequest.findByIdAndUpdate(req.params.id, { status });
         res.json({ message: 'Status updated' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/custom-requests/:id/bid', async (req, res) => {
+    try {
+        const { providerUid, providerName, price } = req.body;
+        const request = await CustomRequest.findById(req.params.id);
+        if (!request) return res.status(404).json({ error: 'Request not found' });
+
+        request.bids.push({ providerUid, providerName, price });
+        await request.save();
+        res.json({ message: 'Bid submitted' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/custom-requests/:id/accept-bid', async (req, res) => {
+    try {
+        const { providerUid, price, providerName } = req.body;
+        const customReq = await CustomRequest.findById(req.params.id);
+        if (!customReq) return res.status(404).json({ error: 'Request not found' });
+
+        customReq.status = 'accepted';
+        customReq.acceptedProviderUid = providerUid;
+        await customReq.save();
+
+        // Create a formal booking
+        const newBooking = new Booking({
+            customerUid: customReq.customerUid,
+            providerUid: providerUid,
+            serviceName: customReq.category + " (Custom)",
+            status: 'accepted',
+            address: "Customer Location", // In real app, get from customer
+            scheduledTime: new Date(),
+            totalAmount: price
+        });
+        await newBooking.save();
+
+        res.status(201).json(newBooking);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
