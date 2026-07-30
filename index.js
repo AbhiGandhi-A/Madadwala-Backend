@@ -120,6 +120,7 @@ const bookingSchema = new mongoose.Schema({
     scheduledTime: Date,
     totalAmount: Number,
     paymentStatus: { type: String, enum: ['pending', 'paid'], default: 'pending' },
+    otp: { type: String, required: true },
     createdAt: { type: Date, default: Date.now }
 });
 const Booking = mongoose.model('Booking', bookingSchema);
@@ -392,8 +393,42 @@ app.put('/api/providers/:uid/services/:serviceId', async (req, res) => {
 // Bookings
 app.post('/api/bookings', async (req, res) => {
     try {
-        const newBooking = new Booking(req.body);
+        const otp = Math.floor(1000 + Math.random() * 9000).toString();
+        const newBooking = new Booking({ ...req.body, otp });
         await newBooking.save();
+        res.status(201).json(newBooking);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/custom-requests/:id/direct-accept', async (req, res) => {
+    try {
+        const { providerUid, providerName } = req.body;
+        const customReq = await CustomRequest.findById(req.params.id);
+        if (!customReq) return res.status(404).json({ error: 'Request not found' });
+        if (customReq.status !== 'pending') return res.status(400).json({ error: 'Request already processed' });
+
+        customReq.status = 'accepted';
+        customReq.acceptedProviderUid = providerUid;
+        await customReq.save();
+
+        // Use the price offered by the customer
+        const price = customReq.minPrice || 0;
+        const otp = Math.floor(1000 + Math.random() * 9000).toString();
+
+        const newBooking = new Booking({
+            customerUid: customReq.customerUid,
+            providerUid: providerUid,
+            serviceName: customReq.category + " (Custom)",
+            status: 'accepted',
+            address: "Customer Location",
+            scheduledTime: new Date(),
+            totalAmount: price,
+            otp: otp
+        });
+        await newBooking.save();
+
         res.status(201).json(newBooking);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -432,6 +467,24 @@ app.patch('/api/bookings/:id', async (req, res) => {
         const { status } = req.body;
         await Booking.findByIdAndUpdate(req.params.id, { status });
         res.json({ message: 'Booking status updated' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/bookings/:id/verify-otp', async (req, res) => {
+    try {
+        const { otp } = req.body;
+        const booking = await Booking.findById(req.params.id);
+        if (!booking) return res.status(404).json({ error: 'Booking not found' });
+
+        if (booking.otp === otp) {
+            booking.status = 'in_progress';
+            await booking.save();
+            res.json({ success: true, message: 'OTP verified, job started' });
+        } else {
+            res.status(400).json({ success: false, message: 'Invalid OTP' });
+        }
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -520,6 +573,8 @@ app.post('/api/custom-requests/:id/accept-bid', async (req, res) => {
         customReq.acceptedProviderUid = providerUid;
         await customReq.save();
 
+        const otp = Math.floor(1000 + Math.random() * 9000).toString();
+
         // Create a formal booking
         const newBooking = new Booking({
             customerUid: customReq.customerUid,
@@ -528,7 +583,41 @@ app.post('/api/custom-requests/:id/accept-bid', async (req, res) => {
             status: 'accepted',
             address: "Customer Location", // In real app, get from customer
             scheduledTime: new Date(),
-            totalAmount: price
+            totalAmount: price,
+            otp: otp
+        });
+        await newBooking.save();
+
+        res.status(201).json(newBooking);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/custom-requests/:id/direct-accept', async (req, res) => {
+    try {
+        const { providerUid, providerName } = req.body;
+        const customReq = await CustomRequest.findById(req.params.id);
+        if (!customReq) return res.status(404).json({ error: 'Request not found' });
+        if (customReq.status !== 'pending') return res.status(400).json({ error: 'Request already processed' });
+
+        customReq.status = 'accepted';
+        customReq.acceptedProviderUid = providerUid;
+        await customReq.save();
+
+        // Use the price offered by the customer
+        const price = customReq.minPrice || 0;
+        const otp = Math.floor(1000 + Math.random() * 9000).toString();
+
+        const newBooking = new Booking({
+            customerUid: customReq.customerUid,
+            providerUid: providerUid,
+            serviceName: customReq.category + " (Custom)",
+            status: 'accepted',
+            address: "Customer Location",
+            scheduledTime: new Date(),
+            totalAmount: price,
+            otp: otp
         });
         await newBooking.save();
 
