@@ -162,6 +162,7 @@ const customRequestSchema = new mongoose.Schema({
         price: Number,
         createdAt: { type: Date, default: Date.now }
     }],
+    rejectedBy: [String], // Array of provider UIDs who rejected this request
     acceptedProviderUid: String,
     createdAt: { type: Date, default: Date.now }
 });
@@ -662,7 +663,16 @@ app.get('/api/custom-requests/customer/:uid', async (req, res) => {
 
 app.patch('/api/custom-requests/:id/status', async (req, res) => {
     try {
-        const { status } = req.body;
+        const { status, providerUid } = req.body;
+
+        if (status === 'rejected' && providerUid) {
+            // Add provider to rejectedBy array instead of changing global status
+            await CustomRequest.findByIdAndUpdate(req.params.id, {
+                $addToSet: { rejectedBy: providerUid }
+            });
+            return res.json({ message: 'Request rejected by provider' });
+        }
+
         await CustomRequest.findByIdAndUpdate(req.params.id, { status });
         res.json({ message: 'Status updated' });
     } catch (error) {
