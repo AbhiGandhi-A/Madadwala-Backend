@@ -57,7 +57,6 @@ const userSchema = new mongoose.Schema({
     aadhaarImage: String,
     category: String,
     profession: String,
-    panNumber: String,
     aadhaarNumber: String,
     verificationDate: String,
     walletBalance: { type: Number, default: 0 },
@@ -178,7 +177,7 @@ app.post('/api/users/register', upload.fields([
     { name: 'aadhaarImage', maxCount: 1 }
 ]), async (req, res) => {
     try {
-        const { uid, phoneNumber, role, name, email, category, profession, aadhaarNumber, panNumber } = req.body;
+        const { uid, phoneNumber, role, name, email, category, profession, aadhaarNumber } = req.body;
 
         let profileImageUrl = '';
         let aadhaarImageUrl = '';
@@ -219,7 +218,6 @@ app.post('/api/users/register', upload.fields([
             category: category,
             profession: profession,
             aadhaarNumber: aadhaarNumber,
-            panNumber: panNumber,
             isVerified: role === 'customer' // Customers verified by default
         });
 
