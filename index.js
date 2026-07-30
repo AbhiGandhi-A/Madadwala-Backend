@@ -97,7 +97,9 @@ const providerSchema = new mongoose.Schema({
     bio: String,
     gallery: [String],
     isVerified: { type: Boolean, default: false },
-    isAvailable: { type: Boolean, default: true }
+    isAvailable: { type: Boolean, default: true },
+    lat: Number,
+    lng: Number
 });
 const Provider = mongoose.model('Provider', providerSchema);
 
@@ -358,7 +360,27 @@ app.get('/api/providers', async (req, res) => {
         const query = { isVerified: true };
         if (category) query.category = category;
         const providers = await Provider.find(query);
-        res.json(providers);
+
+        // Fetch profile image from User collection for each provider
+        const providersWithImages = await Promise.all(providers.map(async (p) => {
+            const user = await User.findOne({ uid: p.uid });
+            return {
+                ...p.toObject(),
+                profileImage: user ? user.profileImage : null
+            };
+        }));
+
+        res.json(providersWithImages);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.patch('/api/providers/:uid/location', async (req, res) => {
+    try {
+        const { lat, lng } = req.body;
+        await Provider.findOneAndUpdate({ uid: req.params.uid }, { lat, lng });
+        res.json({ message: 'Provider location updated' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
