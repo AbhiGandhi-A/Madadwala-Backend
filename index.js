@@ -468,6 +468,33 @@ app.put('/api/providers/:uid/services/:serviceId', async (req, res) => {
     }
 });
 
+app.post('/api/providers/:uid/services', async (req, res) => {
+    try {
+        const { name, price } = req.body;
+        const newService = new Service({
+            providerUid: req.params.uid,
+            name,
+            price,
+            description: `${name} service`
+        });
+        await newService.save();
+
+        // Update starting price
+        const provider = await Provider.findOne({ uid: req.params.uid });
+        if (provider) {
+            const currentMin = provider.startingPrice || Infinity;
+            if (price < currentMin) {
+                provider.startingPrice = price;
+                await provider.save();
+            }
+        }
+
+        res.status(201).json(newService);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Bookings
 app.post('/api/bookings', async (req, res) => {
     try {
