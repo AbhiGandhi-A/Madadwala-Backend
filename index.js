@@ -136,6 +136,20 @@ const reviewSchema = new mongoose.Schema({
 });
 const Review = mongoose.model('Review', reviewSchema);
 
+// Custom Request Schema
+const customRequestSchema = new mongoose.Schema({
+    customerUid: { type: String, required: true },
+    customerName: { type: String, required: true },
+    category: { type: String, required: true },
+    problem: { type: String, required: true },
+    minPrice: Number,
+    maxPrice: Number,
+    isAutoPrice: { type: Boolean, default: false },
+    status: { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' },
+    createdAt: { type: Date, default: Date.now }
+});
+const CustomRequest = mongoose.model('CustomRequest', customRequestSchema);
+
 // Middleware to verify Firebase ID Token
 const verifyToken = async (req, res, next) => {
     const idToken = req.headers.authorization?.split('Bearer ')[1];
@@ -421,6 +435,26 @@ app.post('/api/reviews', async (req, res) => {
         );
 
         res.status(201).json(newReview);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Custom Requests
+app.post('/api/custom-requests', async (req, res) => {
+    try {
+        const newRequest = new CustomRequest(req.body);
+        await newRequest.save();
+        res.status(201).json({ message: 'Request created successfully' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/custom-requests', async (req, res) => {
+    try {
+        const requests = await CustomRequest.find({ status: 'pending' }).sort({ createdAt: -1 });
+        res.json(requests);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
