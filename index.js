@@ -258,12 +258,53 @@ app.post('/api/users/register', upload.fields([
             const newProvider = new Provider({
                 uid,
                 name,
-                category: req.body.category || 'Other',
-                startingPrice: req.body.startingPrice || 0,
-                bio: req.body.bio || '',
+                category: category || 'Other',
+                startingPrice: 0,
+                bio: '',
                 isVerified: false // Explicitly false for new providers
             });
             await newProvider.save();
+
+            // Initialize default services based on category
+            const defaultServices = {
+                'Electrical': [
+                    { name: 'Fan Repair', price: 150 },
+                    { name: 'Switchboard Installation', price: 200 },
+                    { name: 'House Wiring', price: 1500 },
+                    { name: 'AC Point Installation', price: 350 }
+                ],
+                'Plumbing': [
+                    { name: 'Tap Fitting', price: 100 },
+                    { name: 'Pipe Leakage Repair', price: 250 },
+                    { name: 'Toilet Repair', price: 500 },
+                    { name: 'Tank Cleaning', price: 1200 }
+                ],
+                'Cleaning': [
+                    { name: 'Deep Home Cleaning', price: 2000 },
+                    { name: 'Bathroom Cleaning', price: 300 },
+                    { name: 'Kitchen Cleaning', price: 800 },
+                    { name: 'Sofa Cleaning', price: 500 }
+                ]
+            };
+
+            const servicesToCreate = defaultServices[category] || [
+                { name: 'General Service', price: 100 },
+                { name: 'Inspection', price: 50 }
+            ];
+
+            for (const s of servicesToCreate) {
+                const newService = new Service({
+                    providerUid: uid,
+                    name: s.name,
+                    price: s.price,
+                    description: `${s.name} service`
+                });
+                await newService.save();
+            }
+
+            // Set starting price to the lowest service price
+            const minPrice = Math.min(...servicesToCreate.map(s => s.price));
+            await Provider.findOneAndUpdate({ uid }, { startingPrice: minPrice });
         }
 
         res.status(201).json(newUser);
@@ -412,6 +453,14 @@ app.put('/api/providers/:uid/services/:serviceId', async (req, res) => {
     try {
         const { price } = req.body;
         await Service.findByIdAndUpdate(req.params.serviceId, { price });
+
+        // Recalculate starting price
+        const allServices = await Service.find({ providerUid: req.params.uid });
+        if (allServices.length > 0) {
+            const minPrice = Math.min(...allServices.map(s => s.price));
+            await Provider.findOneAndUpdate({ uid: req.params.uid }, { startingPrice: minPrice });
+        }
+
         res.json({ message: 'Service price updated' });
     } catch (error) {
         res.status(500).json({ error: error.message });
