@@ -121,6 +121,10 @@ const bookingSchema = new mongoose.Schema({
     totalAmount: Number,
     paymentStatus: { type: String, enum: ['pending', 'paid'], default: 'pending' },
     otp: { type: String, required: true },
+    customerLat: Number,
+    customerLng: Number,
+    providerLat: Number,
+    providerLng: Number,
     createdAt: { type: Date, default: Date.now }
 });
 const Booking = mongoose.model('Booking', bookingSchema);
@@ -485,6 +489,20 @@ app.post('/api/bookings/:id/verify-otp', async (req, res) => {
         } else {
             res.status(400).json({ success: false, message: 'Invalid OTP' });
         }
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.patch('/api/bookings/:id/location', async (req, res) => {
+    try {
+        const { lat, lng, role } = req.body;
+        const update = role === 'provider'
+            ? { providerLat: lat, providerLng: lng }
+            : { customerLat: lat, customerLng: lng };
+
+        await Booking.findByIdAndUpdate(req.params.id, update);
+        res.json({ message: 'Location updated' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
