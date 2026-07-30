@@ -178,7 +178,7 @@ app.post('/api/users/register', upload.fields([
     { name: 'aadhaarImage', maxCount: 1 }
 ]), async (req, res) => {
     try {
-        const { uid, phoneNumber, role, name, email } = req.body;
+        const { uid, phoneNumber, role, name, email, category, profession, aadhaarNumber, panNumber } = req.body;
 
         let profileImageUrl = '';
         let aadhaarImageUrl = '';
@@ -216,7 +216,10 @@ app.post('/api/users/register', upload.fields([
             email,
             profileImage: profileImageUrl,
             aadhaarImage: aadhaarImageUrl,
-            category: req.body.category,
+            category: category,
+            profession: profession,
+            aadhaarNumber: aadhaarNumber,
+            panNumber: panNumber,
             isVerified: role === 'customer' // Customers verified by default
         });
 
