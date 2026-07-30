@@ -93,7 +93,8 @@ const providerSchema = new mongoose.Schema({
     category: String,
     bio: String,
     gallery: [String],
-    isVerified: { type: Boolean, default: false }
+    isVerified: { type: Boolean, default: false },
+    isAvailable: { type: Boolean, default: true }
 });
 const Provider = mongoose.model('Provider', providerSchema);
 
@@ -342,6 +343,26 @@ app.get('/api/providers/:uid', async (req, res) => {
     }
 });
 
+app.patch('/api/providers/:uid/availability', async (req, res) => {
+    try {
+        const { isAvailable } = req.body;
+        await Provider.findOneAndUpdate({ uid: req.params.uid }, { isAvailable });
+        res.json({ message: 'Availability updated' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.put('/api/providers/:uid/services/:serviceId', async (req, res) => {
+    try {
+        const { price } = req.body;
+        await Service.findByIdAndUpdate(req.params.serviceId, { price });
+        res.json({ message: 'Service price updated' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Bookings
 app.post('/api/bookings', async (req, res) => {
     try {
@@ -356,6 +377,15 @@ app.post('/api/bookings', async (req, res) => {
 app.get('/api/bookings/customer/:uid', async (req, res) => {
     try {
         const bookings = await Booking.find({ customerUid: req.params.uid }).sort({ createdAt: -1 });
+        res.json(bookings);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/bookings/provider/:uid', async (req, res) => {
+    try {
+        const bookings = await Booking.find({ providerUid: req.params.uid }).sort({ createdAt: -1 });
         res.json(bookings);
     } catch (error) {
         res.status(500).json({ error: error.message });
