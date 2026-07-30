@@ -115,6 +115,7 @@ const Service = mongoose.model('Service', serviceSchema);
 // Booking Schema
 const bookingSchema = new mongoose.Schema({
     customerUid: String,
+    customerName: String,
     providerUid: String,
     serviceName: String,
     status: { type: String, enum: ['pending', 'accepted', 'on_the_way', 'arrived', 'in_progress', 'done', 'cancelled'], default: 'pending' },
