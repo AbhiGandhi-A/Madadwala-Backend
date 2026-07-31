@@ -347,10 +347,42 @@ app.post('/api/users/register', upload.fields([
 });
 
 // Categories
+// Categories
 app.get('/api/categories', async (req, res) => {
     try {
         const categories = await Category.find();
         res.json(categories);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/admin/categories', async (req, res) => {
+    try {
+        const { name, icon } = req.body;
+        const newCategory = new Category({ name, icon });
+        await newCategory.save();
+        res.status(201).json(newCategory);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.delete('/api/admin/categories/:id', async (req, res) => {
+    try {
+        await Category.findByIdAndDelete(req.params.id);
+        res.json({ message: 'Category deleted' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/admin/active-jobs', async (req, res) => {
+    try {
+        const activeBookings = await Booking.find({
+            status: { $in: ['accepted', 'on_the_way', 'arrived', 'in_progress'] }
+        }).sort({ createdAt: -1 });
+        res.json(activeBookings);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
