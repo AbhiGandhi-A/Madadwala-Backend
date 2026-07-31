@@ -59,6 +59,12 @@ const userSchema = new mongoose.Schema({
     profession: String,
     aadhaarNumber: String,
     verificationDate: String,
+    selfieImage: String,
+    bankDetails: {
+        accountNumber: String,
+        ifscCode: String,
+        accountHolderName: String
+    },
     walletBalance: { type: Number, default: 0 },
     isVerified: { type: Boolean, default: false },
     favorites: [{ type: String }], // Array of provider UIDs
@@ -1054,6 +1060,33 @@ app.put('/api/admin/offers/:id', async (req, res) => {
     try {
         await Offer.findByIdAndUpdate(req.params.id, req.body);
         res.json({ message: 'Offer updated' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/users/bank-details/:uid', async (req, res) => {
+    try {
+        await User.findOneAndUpdate({ uid: req.params.uid }, { bankDetails: req.body });
+        res.json({ message: 'Bank details updated' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/provider/performance/:uid', async (req, res) => {
+    try {
+        const bookings = await Booking.find({ providerUid: req.params.uid, status: 'done' });
+        // Simplified aggregation for report
+        const totalEarned = bookings.reduce((sum, b) => sum + b.totalAmount, 0);
+        const totalWork = bookings.length;
+        // In real app, group by week/month. For now, returning overview.
+        res.json({
+            totalEarned,
+            totalWork,
+            weekly: [1200, 1500, 800, 2200, 1900, 3000, 2500], // Dummy for graph
+            monthly: [5000, 8000, 12000, 15000] // Dummy for graph
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
