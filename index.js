@@ -61,6 +61,13 @@ const userSchema = new mongoose.Schema({
     verificationDate: String,
     walletBalance: { type: Number, default: 0 },
     isVerified: { type: Boolean, default: false },
+    favorites: [{ type: String }], // Array of provider UIDs
+    addresses: [{
+        label: String, // 'Home', 'Work', etc.
+        fullAddress: String,
+        lat: Number,
+        lng: Number
+    }],
     createdAt: { type: Date, default: Date.now }
 });
 
@@ -169,6 +176,17 @@ const customRequestSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now }
 });
 const CustomRequest = mongoose.model('CustomRequest', customRequestSchema);
+
+// Offer Schema
+const offerSchema = new mongoose.Schema({
+    title: String,
+    description: String,
+    code: String,
+    discount: Number,
+    expiryDate: Date,
+    createdAt: { type: Date, default: Date.now }
+});
+const Offer = mongoose.model('Offer', offerSchema);
 
 // Middleware to verify Firebase ID Token
 const verifyToken = async (req, res, next) => {
@@ -812,5 +830,71 @@ if (process.env.NODE_ENV !== 'production') {
         console.log(`Server running on port ${PORT}`);
     });
 }
+
+// Admin: Offers
+app.get('/api/offers', async (req, res) => {
+    try {
+        const offers = await Offer.find().sort({ createdAt: -1 });
+        res.json(offers);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/admin/offers', async (req, res) => {
+    try {
+        const newOffer = new Offer(req.body);
+        await newOffer.save();
+        res.status(201).json(newOffer);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Profile Management
+app.patch('/api/users/:uid', async (req, res) => {
+    try {
+        await User.findOneAndUpdate({ uid: req.params.uid }, req.body);
+        res.json({ message: 'Profile updated' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/users/:uid/favorites', async (req, res) => {
+    try {
+        const { providerUid } = req.body;
+        const user = await User.findOne({ uid: req.params.uid });
+        if (!user.favorites.includes(providerUid)) {
+            user.favorites.push(providerUid);
+            await user.save();
+        }
+        res.json({ message: 'Added to favorites' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.delete('/api/users/:uid/favorites/:providerUid', async (req, res) => {
+    try {
+        await User.findOneAndUpdate(
+            { uid: req.params.uid },
+            { $pull: { favorites: req.params.providerUid } }
+        );
+        res.json({ message: 'Removed from favorites' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/users/:uid/favorites', async (req, res) => {
+    try {
+        const user = await User.findOne({ uid: req.params.uid });
+        const providers = await Provider.find({ uid: { $in: user.favorites } });
+        res.json(providers);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 
 module.exports = app;
