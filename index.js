@@ -74,6 +74,7 @@ const userSchema = new mongoose.Schema({
         lat: Number,
         lng: Number
     }],
+    dailyOnline: [{ type: String }], // Array of dates 'YYYY-MM-DD'
     createdAt: { type: Date, default: Date.now }
 });
 
@@ -111,6 +112,7 @@ const providerSchema = new mongoose.Schema({
     gallery: [String],
     isVerified: { type: Boolean, default: false },
     isAvailable: { type: Boolean, default: true },
+    dailyOnline: [{ type: String }], // Array of dates 'YYYY-MM-DD'
     lat: Number,
     lng: Number
 });
@@ -519,6 +521,17 @@ app.get('/api/providers/:uid', async (req, res) => {
 app.patch('/api/providers/:uid/availability', async (req, res) => {
     try {
         const { isAvailable } = req.body;
+        const today = new Date().toISOString().split('T')[0];
+
+        let update = { isAvailable };
+        if (isAvailable) {
+            // Add today to dailyOnline if not already there
+            await Provider.findOneAndUpdate(
+                { uid: req.params.uid },
+                { $addToSet: { dailyOnline: today } }
+            );
+        }
+
         await Provider.findOneAndUpdate({ uid: req.params.uid }, { isAvailable });
         res.json({ message: 'Availability updated' });
     } catch (error) {
@@ -1076,16 +1089,38 @@ app.post('/api/users/bank-details/:uid', async (req, res) => {
 
 app.get('/api/provider/performance/:uid', async (req, res) => {
     try {
-        const bookings = await Booking.find({ providerUid: req.params.uid, status: 'done' });
-        // Simplified aggregation for report
+        const uid = req.params.uid;
+        const bookings = await Booking.find({ providerUid: uid, status: 'done' });
+        const user = await User.findOne({ uid });
+        const provider = await Provider.findOne({ uid });
+
         const totalEarned = bookings.reduce((sum, b) => sum + b.totalAmount, 0);
         const totalWork = bookings.length;
-        // In real app, group by week/month. For now, returning overview.
+
+        // Activity Log for current month
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = today.getMonth();
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+        const dailyActivity = [];
+        const onlineDates = provider?.dailyOnline || [];
+
+        for (let d = 1; d <= daysInMonth; d++) {
+            const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+            dailyActivity.push({
+                date: dateStr,
+                isOnline: onlineDates.includes(dateStr)
+            });
+        }
+
         res.json({
             totalEarned,
             totalWork,
-            weekly: [1200, 1500, 800, 2200, 1900, 3000, 2500], // Dummy for graph
-            monthly: [5000, 8000, 12000, 15000] // Dummy for graph
+            weekly: [1200, 1500, 800, 2200, 1900, 3000, 2500], // Still dummy, real would need date grouping
+            monthly: [5000, 8000, 12000, 15000],
+            joinDate: user?.createdAt || new Date(),
+            dailyActivity
         });
     } catch (error) {
         res.status(500).json({ error: error.message });
