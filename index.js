@@ -188,6 +188,16 @@ const offerSchema = new mongoose.Schema({
 });
 const Offer = mongoose.model('Offer', offerSchema);
 
+// Banner Schema
+const bannerSchema = new mongoose.Schema({
+    image: String,
+    title: String,
+    subtitle: String,
+    isActive: { type: Boolean, default: true },
+    createdAt: { type: Date, default: Date.now }
+});
+const Banner = mongoose.model('Banner', bannerSchema);
+
 // Middleware to verify Firebase ID Token
 const verifyToken = async (req, res, next) => {
     const idToken = req.headers.authorization?.split('Bearer ')[1];
@@ -926,6 +936,40 @@ app.delete('/api/users/:uid/addresses/:addressId', async (req, res) => {
             { $pull: { addresses: { _id: req.params.addressId } } }
         );
         res.json({ message: 'Address removed' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Banners
+app.get('/api/banners', async (req, res) => {
+    try {
+        const banners = await Banner.find({ isActive: true }).sort({ createdAt: -1 });
+        res.json(banners);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/admin/banners', upload.single('image'), async (req, res) => {
+    try {
+        const { title, subtitle } = req.body;
+        let imageUrl = '';
+
+        if (req.file) {
+            const fileName = `banners/${Date.now()}.jpg`;
+            await s3.send(new PutObjectCommand({
+                Bucket: process.env.R2_BUCKET_NAME,
+                Key: fileName,
+                Body: req.file.buffer,
+                ContentType: req.file.mimetype,
+            }));
+            imageUrl = `${process.env.R2_PUBLIC_URL}/${fileName}`;
+        }
+
+        const newBanner = new Banner({ image: imageUrl, title, subtitle });
+        await newBanner.save();
+        res.status(201).json(newBanner);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
