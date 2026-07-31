@@ -433,9 +433,16 @@ app.patch('/api/providers/:uid/location', async (req, res) => {
 app.get('/api/providers/:uid', async (req, res) => {
     try {
         const provider = await Provider.findOne({ uid: req.params.uid });
+        const user = await User.findOne({ uid: req.params.uid });
         const services = await Service.find({ providerUid: req.params.uid });
         const reviews = await Review.find({ providerUid: req.params.uid });
-        res.json({ provider, services, reviews });
+
+        const providerWithImage = {
+            ...provider.toObject(),
+            profileImage: user ? user.profileImage : null
+        };
+
+        res.json({ provider: providerWithImage, services, reviews });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
