@@ -557,7 +557,19 @@ app.post('/api/custom-requests/:id/direct-accept', async (req, res) => {
 app.get('/api/bookings/customer/:uid', async (req, res) => {
     try {
         const bookings = await Booking.find({ customerUid: req.params.uid }).sort({ createdAt: -1 });
-        res.json(bookings);
+
+        // Ensure provider names are present for accepted bookings
+        const enrichedBookings = await Promise.all(bookings.map(async (b) => {
+            if (!b.providerName && b.providerUid) {
+                const provider = await User.findOne({ uid: b.providerUid });
+                if (provider) {
+                    b.providerName = provider.name;
+                }
+            }
+            return b;
+        }));
+
+        res.json(enrichedBookings);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -566,7 +578,19 @@ app.get('/api/bookings/customer/:uid', async (req, res) => {
 app.get('/api/bookings/provider/:uid', async (req, res) => {
     try {
         const bookings = await Booking.find({ providerUid: req.params.uid }).sort({ createdAt: -1 });
-        res.json(bookings);
+
+        // Ensure customer names are present
+        const enrichedBookings = await Promise.all(bookings.map(async (b) => {
+            if (!b.customerName && b.customerUid) {
+                const customer = await User.findOne({ uid: b.customerUid });
+                if (customer) {
+                    b.customerName = customer.name;
+                }
+            }
+            return b;
+        }));
+
+        res.json(enrichedBookings);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
