@@ -1029,4 +1029,34 @@ app.delete('/api/admin/banners/:id', async (req, res) => {
     }
 });
 
+app.put('/api/admin/banners/:id', upload.single('image'), async (req, res) => {
+    try {
+        const { title, subtitle } = req.body;
+        const update = { title, subtitle };
+        if (req.file) {
+            const fileName = `banners/${Date.now()}.jpg`;
+            await s3.send(new PutObjectCommand({
+                Bucket: process.env.R2_BUCKET_NAME,
+                Key: fileName,
+                Body: req.file.buffer,
+                ContentType: req.file.mimetype,
+            }));
+            update.image = `${process.env.R2_PUBLIC_URL}/${fileName}`;
+        }
+        await Banner.findByIdAndUpdate(req.params.id, update);
+        res.json({ message: 'Banner updated' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.put('/api/admin/offers/:id', async (req, res) => {
+    try {
+        await Offer.findByIdAndUpdate(req.params.id, req.body);
+        res.json({ message: 'Offer updated' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 module.exports = app;
