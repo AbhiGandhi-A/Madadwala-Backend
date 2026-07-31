@@ -768,7 +768,11 @@ app.post('/api/custom-requests', async (req, res) => {
 
 app.get('/api/custom-requests', async (req, res) => {
     try {
-        const requests = await CustomRequest.find({ status: 'pending' }).sort({ createdAt: -1 });
+        const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+        const requests = await CustomRequest.find({
+            status: 'pending',
+            createdAt: { $gte: fiveMinutesAgo }
+        }).sort({ createdAt: -1 });
         res.json(requests);
     } catch (error) {
         res.status(500).json({ error: error.message });
