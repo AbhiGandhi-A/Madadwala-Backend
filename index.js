@@ -129,6 +129,7 @@ const bookingSchema = new mongoose.Schema({
     customerLng: Number,
     providerLat: Number,
     providerLng: Number,
+    partnerComment: String,
     createdAt: { type: Date, default: Date.now }
 });
 const Booking = mongoose.model('Booking', bookingSchema);
@@ -582,9 +583,14 @@ app.get('/api/bookings/:id', async (req, res) => {
 
 app.patch('/api/bookings/:id', async (req, res) => {
     try {
-        const { status } = req.body;
-        await Booking.findByIdAndUpdate(req.params.id, { status });
-        res.json({ message: 'Booking status updated' });
+        const { status, scheduledTime, partnerComment } = req.body;
+        const update = {};
+        if (status) update.status = status;
+        if (scheduledTime) update.scheduledTime = scheduledTime;
+        if (partnerComment) update.partnerComment = partnerComment;
+
+        await Booking.findByIdAndUpdate(req.params.id, update);
+        res.json({ message: 'Booking updated' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
