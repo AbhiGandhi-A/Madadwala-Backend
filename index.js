@@ -897,4 +897,38 @@ app.get('/api/users/:uid/favorites', async (req, res) => {
     }
 });
 
+// Address Management
+app.post('/api/users/:uid/addresses', async (req, res) => {
+    try {
+        await User.findOneAndUpdate(
+            { uid: req.params.uid },
+            { $push: { addresses: req.body } }
+        );
+        res.status(201).json({ message: 'Address added' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/users/:uid/addresses', async (req, res) => {
+    try {
+        const user = await User.findOne({ uid: req.params.uid });
+        res.json(user.addresses || []);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.delete('/api/users/:uid/addresses/:addressId', async (req, res) => {
+    try {
+        await User.findOneAndUpdate(
+            { uid: req.params.uid },
+            { $pull: { addresses: { _id: req.params.addressId } } }
+        );
+        res.json({ message: 'Address removed' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 module.exports = app;
