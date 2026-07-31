@@ -117,6 +117,7 @@ const bookingSchema = new mongoose.Schema({
     customerUid: String,
     customerName: String,
     providerUid: String,
+    providerName: String,
     serviceName: String,
     status: { type: String, enum: ['pending', 'accepted', 'on_the_way', 'arrived', 'in_progress', 'done', 'cancelled'], default: 'pending' },
     address: String,
@@ -532,11 +533,13 @@ app.post('/api/custom-requests/:id/direct-accept', async (req, res) => {
 
         const newBooking = new Booking({
             customerUid: customReq.customerUid,
+            customerName: customReq.customerName,
             providerUid: providerUid,
+            providerName: providerName,
             serviceName: customReq.category + " (Custom)",
             status: 'accepted',
             address: "Customer Location",
-            scheduledTime: new Date(),
+            scheduledTime: "ASAP",
             totalAmount: price,
             otp: otp,
             customerLat: customReq.lat,
@@ -716,11 +719,13 @@ app.post('/api/custom-requests/:id/accept-bid', async (req, res) => {
         // Create a formal booking
         const newBooking = new Booking({
             customerUid: customReq.customerUid,
+            customerName: customReq.customerName,
             providerUid: providerUid,
+            providerName: providerName,
             serviceName: customReq.category + " (Custom)",
             status: 'accepted',
             address: "Customer Location", // In real app, get from customer
-            scheduledTime: new Date(),
+            scheduledTime: "ASAP",
             totalAmount: price,
             otp: otp,
             customerLat: customReq.lat,
@@ -751,11 +756,13 @@ app.post('/api/custom-requests/:id/direct-accept', async (req, res) => {
 
         const newBooking = new Booking({
             customerUid: customReq.customerUid,
+            customerName: customReq.customerName,
             providerUid: providerUid,
+            providerName: providerName,
             serviceName: customReq.category + " (Custom)",
             status: 'accepted',
             address: "Customer Location",
-            scheduledTime: new Date(),
+            scheduledTime: "ASAP",
             totalAmount: price,
             otp: otp,
             customerLat: customReq.lat,
