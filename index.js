@@ -36,10 +36,10 @@ mongoose.connect(process.env.MONGODB_URI)
 // Cloudflare R2 Client
 const s3 = new S3Client({
     region: 'auto',
-    endpoint: process.env.R2_ENDPOINT,
+    endpoint: process.env.R2_ENDPOINT || `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`,
     credentials: {
-        accessKeyId: process.env.R2_ACCESS_KEY_ID,
-        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+        accessKeyId: process.env.R2_ACCESS_KEY_ID || process.env.CLOUDFLARE_ACCESS_KEY_ID,
+        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || process.env.CLOUDFLARE_SECRET_ACCESS_KEY,
     },
 });
 
@@ -249,7 +249,7 @@ app.post('/api/users/register', upload.fields([
             const file = req.files['profileImage'][0];
             const fileName = `profiles/${uid}_${Date.now()}.jpg`;
             await s3.send(new PutObjectCommand({
-                Bucket: process.env.R2_BUCKET_NAME,
+                Bucket: process.env.R2_BUCKET_NAME || process.env.CLOUDFLARE_BUCKET_NAME,
                 Key: fileName,
                 Body: file.buffer,
                 ContentType: file.mimetype,
@@ -261,7 +261,7 @@ app.post('/api/users/register', upload.fields([
             const file = req.files['aadhaarImage'][0];
             const fileName = `aadhaar/${uid}_${Date.now()}.jpg`;
             await s3.send(new PutObjectCommand({
-                Bucket: process.env.R2_BUCKET_NAME,
+                Bucket: process.env.R2_BUCKET_NAME || process.env.CLOUDFLARE_BUCKET_NAME,
                 Key: fileName,
                 Body: file.buffer,
                 ContentType: file.mimetype,
@@ -1004,7 +1004,7 @@ app.post('/api/admin/banners', upload.single('image'), async (req, res) => {
         if (req.file) {
             const fileName = `banners/${Date.now()}.jpg`;
             await s3.send(new PutObjectCommand({
-                Bucket: process.env.R2_BUCKET_NAME,
+                Bucket: process.env.R2_BUCKET_NAME || process.env.CLOUDFLARE_BUCKET_NAME,
                 Key: fileName,
                 Body: req.file.buffer,
                 ContentType: req.file.mimetype,
@@ -1036,7 +1036,7 @@ app.put('/api/admin/banners/:id', upload.single('image'), async (req, res) => {
         if (req.file) {
             const fileName = `banners/${Date.now()}.jpg`;
             await s3.send(new PutObjectCommand({
-                Bucket: process.env.R2_BUCKET_NAME,
+                Bucket: process.env.R2_BUCKET_NAME || process.env.CLOUDFLARE_BUCKET_NAME,
                 Key: fileName,
                 Body: req.file.buffer,
                 ContentType: req.file.mimetype,
