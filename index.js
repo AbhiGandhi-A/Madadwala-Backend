@@ -171,7 +171,7 @@ const customRequestSchema = new mongoose.Schema({
         price: Number,
         createdAt: { type: Date, default: Date.now }
     }],
-    rejectedBy: [String], // Array of provider UIDs who rejected this request
+    rejectedBy: [{ type: String }], // Array of provider UIDs who rejected this request
     acceptedProviderUid: String,
     createdAt: { type: Date, default: Date.now }
 });
