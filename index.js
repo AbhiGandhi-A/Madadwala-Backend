@@ -584,7 +584,11 @@ app.post('/api/custom-requests/:id/direct-accept', async (req, res) => {
 
 app.get('/api/bookings/customer/:uid', async (req, res) => {
     try {
-        const bookings = await Booking.find({ customerUid: req.params.uid }).sort({ createdAt: -1 });
+        const { uid } = req.params;
+        if (!uid || uid === 'null' || uid === 'undefined') {
+            return res.status(400).json({ error: 'Valid User UID is required' });
+        }
+        const bookings = await Booking.find({ customerUid: uid }).sort({ createdAt: -1 });
 
         // Ensure provider names are present for accepted bookings
         const enrichedBookings = await Promise.all(bookings.map(async (b) => {
@@ -861,6 +865,15 @@ app.post('/api/admin/offers', async (req, res) => {
     }
 });
 
+app.delete('/api/admin/offers/:id', async (req, res) => {
+    try {
+        await Offer.findByIdAndDelete(req.params.id);
+        res.json({ message: 'Offer deleted' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Profile Management
 app.patch('/api/users/:uid', async (req, res) => {
     try {
@@ -970,6 +983,15 @@ app.post('/api/admin/banners', upload.single('image'), async (req, res) => {
         const newBanner = new Banner({ image: imageUrl, title, subtitle });
         await newBanner.save();
         res.status(201).json(newBanner);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.delete('/api/admin/banners/:id', async (req, res) => {
+    try {
+        await Banner.findByIdAndDelete(req.params.id);
+        res.json({ message: 'Banner deleted' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
