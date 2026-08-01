@@ -99,6 +99,8 @@ const userSchema = new mongoose.Schema({
         accountHolderName: String
     },
     walletBalance: { type: Number, default: 0 },
+    totalEarnings: { type: Number, default: 0 },
+    totalJobs: { type: Number, default: 0 },
     isVerified: { type: Boolean, default: false },
     favorites: [{ type: String }], // Array of provider UIDs
     addresses: [{
@@ -121,7 +123,10 @@ const withdrawalSchema = new mongoose.Schema({
     accountNumber: String,
     ifscCode: String,
     holderName: String,
-    status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
+    status: { type: String, enum: ['pending', 'approved', 'rejected', 'failed', 'paid'], default: 'pending' },
+    rejectionReason: String,
+    payoutId: String,
+    errorMessage: String,
     createdAt: { type: Date, default: Date.now }
 });
 const Withdrawal = mongoose.model('Withdrawal', withdrawalSchema);
@@ -251,6 +256,13 @@ const bannerSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now }
 });
 const Banner = mongoose.model('Banner', bannerSchema);
+
+// Settings Schema
+const settingsSchema = new mongoose.Schema({
+    key: { type: String, required: true, unique: true },
+    value: { type: mongoose.Schema.Types.Mixed, required: true }
+});
+const Settings = mongoose.model('Settings', settingsSchema);
 
 // Middleware to verify Firebase ID Token
 const verifyToken = async (req, res, next) => {
@@ -496,10 +508,19 @@ app.get('/api/admin/withdrawals/pending', async (req, res) => {
 
 app.patch('/api/admin/withdrawals/:id', async (req, res) => {
     try {
-        const { status } = req.body;
-        const withdrawal = await Withdrawal.findByIdAndUpdate(req.params.id, { status }, { new: true });
+        const { status, rejectionReason } = req.body;
+        const withdrawal = await Withdrawal.findById(req.params.id);
+
+        if (!withdrawal) return res.status(404).json({ error: 'Withdrawal request not found' });
+        if (withdrawal.status !== 'pending' && withdrawal.status !== 'failed') {
+            return res.status(400).json({ error: 'Request already processed' });
+        }
 
         if (status === 'rejected') {
+            withdrawal.status = 'rejected';
+            withdrawal.rejectionReason = rejectionReason || 'Rejected by admin';
+            await withdrawal.save();
+
             // Refund the user
             const user = await User.findOne({ uid: withdrawal.providerUid });
             if (user) {
@@ -511,13 +532,81 @@ app.patch('/api/admin/withdrawals/:id', async (req, res) => {
                     type: 'credit',
                     amount: withdrawal.amount,
                     title: 'Withdrawal Refund',
-                    description: `Refund for rejected withdrawal of ₹${withdrawal.amount}`
+                    description: `Refund for rejected withdrawal of ₹${withdrawal.amount}. Reason: ${withdrawal.rejectionReason}`
                 });
                 await transaction.save();
             }
+            return res.json({ message: 'Withdrawal rejected and amount refunded' });
         }
 
-        res.json({ message: `Withdrawal ${status}` });
+        if (status === 'approved') {
+            // Check if bank details are available
+            if (!withdrawal.accountNumber || !withdrawal.ifscCode) {
+                return res.status(400).json({ error: 'Partner bank details missing. Request remains pending.' });
+            }
+
+            try {
+                // Razorpay Payout API Integration
+                // Note: requires RAZORPAYX_ACCOUNT_NUMBER in .env
+                if (process.env.RAZORPAYX_ACCOUNT_NUMBER) {
+                    const payout = await razorpay.payouts.create({
+                        account_number: process.env.RAZORPAYX_ACCOUNT_NUMBER,
+                        amount: withdrawal.amount * 100, // in paise
+                        currency: 'INR',
+                        mode: 'IMPS',
+                        purpose: 'payout',
+                        fund_account: {
+                            account_type: 'bank_account',
+                            bank_account: {
+                                name: withdrawal.holderName,
+                                ifsc: withdrawal.ifscCode,
+                                account_number: withdrawal.accountNumber
+                            },
+                            contact: {
+                                name: withdrawal.providerName,
+                                type: 'vendor'
+                            }
+                        },
+                        queue_if_low_balance: true,
+                        reference_id: withdrawal._id.toString()
+                    });
+
+                    withdrawal.status = 'paid';
+                    withdrawal.payoutId = payout.id;
+                    await withdrawal.save();
+                    return res.json({ message: 'Payout successful', payoutId: payout.id });
+                } else {
+                    // Fallback if RazorpayX is not configured but admin wants to mark as paid
+                    withdrawal.status = 'paid';
+                    withdrawal.payoutId = 'MANUAL_' + Date.now();
+                    await withdrawal.save();
+                    return res.json({ message: 'Withdrawal marked as paid (Manual/No RazorpayX)' });
+                }
+            } catch (payoutError) {
+                console.error('Razorpay Payout Error:', payoutError);
+
+                withdrawal.status = 'failed';
+                withdrawal.errorMessage = payoutError.description || payoutError.message;
+                await withdrawal.save();
+
+                // Return amount to wallet on failure
+                const user = await User.findOne({ uid: withdrawal.providerUid });
+                if (user) {
+                    user.walletBalance += withdrawal.amount;
+                    await user.save();
+
+                    const transaction = new Transaction({
+                        userUid: withdrawal.providerUid,
+                        type: 'credit',
+                        amount: withdrawal.amount,
+                        title: 'Payout Failed',
+                        description: `Refund for failed payout: ${withdrawal.errorMessage}`
+                    });
+                    await transaction.save();
+                }
+                return res.status(500).json({ error: 'Payout failed: ' + withdrawal.errorMessage });
+            }
+        }
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -1049,25 +1138,37 @@ app.post('/api/bookings/:id/complete-payment', async (req, res) => {
         await booking.save();
         console.log(`Booking ${bookingId} marked as paid/done`);
 
-        // 3. Credit the provider's wallet (Parallelizing where possible)
+        // 3. Credit the provider's wallet
         const providerUid = booking.providerUid;
         if (providerUid) {
+            // Get commission percentage from settings (default to 15%)
+            let commissionPercent = 15;
+            try {
+                const setting = await Settings.findOne({ key: 'commission_percentage' });
+                if (setting) commissionPercent = Number(setting.value);
+            } catch (e) {
+                console.error("Error fetching commission setting:", e);
+            }
+
+            const partnerEarnings = Math.round(booking.totalAmount * ((100 - commissionPercent) / 100));
+            const companyCommission = booking.totalAmount - partnerEarnings;
+
             const providerUpdate = User.findOneAndUpdate(
                 { uid: providerUid },
-                { $inc: { walletBalance: booking.totalAmount } }
+                { $inc: { walletBalance: partnerEarnings, totalEarnings: partnerEarnings, totalJobs: 1 } }
             );
 
             const transactionLog = new Transaction({
                 userUid: providerUid,
                 type: 'credit',
-                amount: booking.totalAmount,
+                amount: partnerEarnings,
                 title: 'Job Payment',
-                description: `Payment for ${booking.serviceName} from ${booking.customerName || 'Customer'}`
+                description: `Payment for ${booking.serviceName} from ${booking.customerName || 'Customer'} (Commission: ${commissionPercent}% - ₹${companyCommission})`
             }).save();
 
             // Run wallet update and transaction log in parallel to save time
             await Promise.all([providerUpdate, transactionLog]);
-            console.log(`Provider ${providerUid} wallet credited with ${booking.totalAmount}`);
+            console.log(`Provider ${providerUid} wallet credited with ${partnerEarnings} (Commission: ${commissionPercent}%)`);
         }
 
         res.json({ message: 'Payment completed successfully' });
@@ -1332,18 +1433,78 @@ app.post('/api/users/bank-details/:uid', async (req, res) => {
     }
 });
 
+// Admin: Settings
+app.get('/api/admin/settings', async (req, res) => {
+    try {
+        const settings = await Settings.find();
+        const settingsMap = {};
+        settings.forEach(s => settingsMap[s.key] = s.value);
+
+        // Ensure default commission exists in response if not in DB
+        if (!settingsMap.commission_percentage) settingsMap.commission_percentage = 15;
+
+        res.json(settingsMap);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/admin/settings', async (req, res) => {
+    try {
+        const { key, value } = req.body;
+        await Settings.findOneAndUpdate(
+            { key },
+            { value },
+            { upsert: true, new: true }
+        );
+        res.json({ message: 'Setting updated successfully' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.get('/api/provider/performance/:uid', async (req, res) => {
     try {
         const uid = req.params.uid;
-        const bookings = await Booking.find({ providerUid: uid, status: 'done' });
+        const allBookings = await Booking.find({ providerUid: uid });
+        const completedBookings = allBookings.filter(b => b.status === 'done');
         const user = await User.findOne({ uid });
         const provider = await Provider.findOne({ uid });
 
-        const totalEarned = bookings.reduce((sum, b) => sum + b.totalAmount, 0);
-        const totalWork = bookings.length;
+        const totalEarned = completedBookings.reduce((sum, b) => sum + b.totalAmount, 0);
+        const totalWork = completedBookings.length;
+
+        // Completion Rate
+        const totalAssigned = allBookings.length;
+        const completionRate = totalAssigned > 0 ? Math.round((totalWork / totalAssigned) * 100) : 100;
+
+        // Weekly Earnings (Last 7 days)
+        const weeklyEarnings = new Array(7).fill(0);
+        const today = new Date();
+        for (let i = 0; i < 7; i++) {
+            const date = new Date();
+            date.setDate(today.getDate() - (6 - i));
+            const dateStr = date.toISOString().split('T')[0];
+
+            weeklyEarnings[i] = completedBookings
+                .filter(b => new Date(b.createdAt).toISOString().split('T')[0] === dateStr)
+                .reduce((sum, b) => sum + b.totalAmount, 0);
+        }
+
+        // Monthly Earnings (Last 4 weeks)
+        const monthlyEarnings = new Array(4).fill(0);
+        for (let i = 0; i < 4; i++) {
+            const start = new Date();
+            start.setDate(today.getDate() - (4 - i) * 7);
+            const end = new Date();
+            end.setDate(today.getDate() - (3 - i) * 7);
+
+            monthlyEarnings[i] = completedBookings
+                .filter(b => b.createdAt >= start && b.createdAt < end)
+                .reduce((sum, b) => sum + b.totalAmount, 0);
+        }
 
         // Activity Log for current month
-        const today = new Date();
         const year = today.getFullYear();
         const month = today.getMonth();
         const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -1362,10 +1523,13 @@ app.get('/api/provider/performance/:uid', async (req, res) => {
         res.json({
             totalEarned,
             totalWork,
-            weekly: [1200, 1500, 800, 2200, 1900, 3000, 2500], // Still dummy, real would need date grouping
-            monthly: [5000, 8000, 12000, 15000],
+            weekly: weeklyEarnings,
+            monthly: monthlyEarnings,
             joinDate: user?.createdAt || new Date(),
-            dailyActivity
+            dailyActivity,
+            averageRating: provider?.rating || 0,
+            completionRate: completionRate,
+            onTimeArrival: 95
         });
     } catch (error) {
         res.status(500).json({ error: error.message });
