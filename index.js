@@ -5,8 +5,15 @@ const dotenv = require('dotenv');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const multer = require('multer');
 const admin = require('firebase-admin');
+const Razorpay = require('razorpay');
 
 dotenv.config();
+
+// Razorpay Initialization
+const razorpay = new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_Rn3PSfSeZZhlXf',
+    key_secret: process.env.RAZORPAY_KEY_SECRET
+});
 
 // Firebase Admin Initialization
 if (!admin.apps.length) {
@@ -66,6 +73,11 @@ const userSchema = new mongoose.Schema({
         accountHolderName: String
     },
     walletBalance: { type: Number, default: 0 },
+    bankDetails: {
+        accountNumber: String,
+        ifscCode: String,
+        accountHolderName: String
+    },
     isVerified: { type: Boolean, default: false },
     favorites: [{ type: String }], // Array of provider UIDs
     addresses: [{
@@ -79,6 +91,19 @@ const userSchema = new mongoose.Schema({
 });
 
 const User = mongoose.model('User', userSchema);
+
+// Withdrawal Request Schema
+const withdrawalSchema = new mongoose.Schema({
+    providerUid: { type: String, required: true },
+    providerName: String,
+    amount: { type: Number, required: true },
+    accountNumber: String,
+    ifscCode: String,
+    holderName: String,
+    status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
+    createdAt: { type: Date, default: Date.now }
+});
+const Withdrawal = mongoose.model('Withdrawal', withdrawalSchema);
 
 // Transaction Schema
 const transactionSchema = new mongoose.Schema({
@@ -396,6 +421,89 @@ app.get('/api/admin/active-jobs', async (req, res) => {
     }
 });
 
+// Withdrawal Management
+app.post('/api/withdrawals/request', async (req, res) => {
+    try {
+        const { providerUid, amount } = req.body;
+        const user = await User.findOne({ uid: providerUid });
+
+        if (!user) return res.status(404).json({ error: 'User not found' });
+        if (!user.bankDetails || !user.bankDetails.accountNumber) {
+            return res.status(400).json({ error: 'Please add your bank account first' });
+        }
+        if (amount < 500) return res.status(400).json({ error: 'Minimum withdrawal amount is ₹500' });
+        if (user.walletBalance < amount) return res.status(400).json({ error: 'Insufficient balance' });
+
+        const withdrawal = new Withdrawal({
+            providerUid,
+            providerName: user.name,
+            amount,
+            accountNumber: user.bankDetails.accountNumber,
+            ifscCode: user.bankDetails.ifscCode,
+            holderName: user.bankDetails.accountHolderName
+        });
+        await withdrawal.save();
+
+        // Deduct from wallet immediately
+        user.walletBalance -= amount;
+        await user.save();
+
+        // Log transaction
+        const transaction = new Transaction({
+            userUid: providerUid,
+            type: 'debit',
+            amount,
+            title: 'Withdrawal Request',
+            description: `Requested withdrawal of ₹${amount} to A/C ${user.bankDetails.accountNumber.slice(-4)}`
+        });
+        await transaction.save();
+
+        res.json({ message: 'Withdrawal requested successfully. It takes 3-4 hours to credit.' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/admin/withdrawals/pending', async (req, res) => {
+    try {
+        const withdrawals = await Withdrawal.find({ status: 'pending' }).sort({ createdAt: -1 });
+        res.json(withdrawals);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.patch('/api/admin/withdrawals/:id', async (req, res) => {
+    try {
+        const { status } = req.body;
+        const withdrawal = await Withdrawal.findByIdAndUpdate(req.params.id, { status }, { new: true });
+
+        if (status === 'rejected') {
+            // Refund the user
+            const user = await User.findOne({ uid: withdrawal.providerUid });
+            if (user) {
+                user.walletBalance += withdrawal.amount;
+                await user.save();
+
+                const transaction = new Transaction({
+                    userUid: withdrawal.providerUid,
+                    type: 'credit',
+                    amount: withdrawal.amount,
+                    title: 'Withdrawal Refund',
+                    description: `Refund for rejected withdrawal of ₹${withdrawal.amount}`
+                });
+                await transaction.save();
+            }
+        }
+
+        res.json({ message: `Withdrawal ${status}` });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Withdrawal Management End
+
 // Wallet & Transactions
 app.get('/api/wallet/transactions/:uid', async (req, res) => {
     try {
@@ -618,7 +726,7 @@ app.post('/api/custom-requests/:id/direct-accept', async (req, res) => {
             providerName: providerName,
             serviceName: customReq.category + " (Custom)",
             status: 'accepted',
-            address: "Customer Location",
+            address: customReq.customerName + "'s Location",
             scheduledTime: "ASAP",
             totalAmount: price,
             otp: otp,
@@ -841,7 +949,7 @@ app.post('/api/custom-requests/:id/accept-bid', async (req, res) => {
             providerName: providerName,
             serviceName: customReq.category + " (Custom)",
             status: 'accepted',
-            address: "Customer Location", // In real app, get from customer
+            address: customReq.customerName + "'s Location", // In real app, get from customer
             scheduledTime: "ASAP",
             totalAmount: price,
             otp: otp,
@@ -878,7 +986,7 @@ app.post('/api/custom-requests/:id/direct-accept', async (req, res) => {
             providerName: providerName,
             serviceName: customReq.category + " (Custom)",
             status: 'accepted',
-            address: "Customer Location",
+            address: customReq.customerName + "'s Location",
             scheduledTime: "ASAP",
             totalAmount: price,
             otp: otp,
@@ -889,6 +997,32 @@ app.post('/api/custom-requests/:id/direct-accept', async (req, res) => {
 
         res.status(201).json(newBooking);
     } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/bookings/:id/complete-payment', async (req, res) => {
+    // ... existing code ...
+});
+
+// Create Razorpay Order
+app.post('/api/payments/create-order', async (req, res) => {
+    try {
+        const { amount, bookingId } = req.body;
+        const options = {
+            amount: Math.round(amount * 100), // amount in the smallest currency unit (paise)
+            currency: "INR",
+            receipt: `receipt_${bookingId}`,
+        };
+        const order = await razorpay.orders.create(options);
+        res.json({
+            id: order.id,
+            currency: order.currency,
+            amount: order.amount,
+            keyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_Rn3PSfSeZZhlXf'
+        });
+    } catch (error) {
+        console.error('Razorpay Order Error:', error);
         res.status(500).json({ error: error.message });
     }
 });
