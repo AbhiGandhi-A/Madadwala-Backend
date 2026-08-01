@@ -1034,26 +1034,34 @@ app.post('/api/bookings/:id/complete-payment', async (req, res) => {
 // Create Razorpay Order
 app.post('/api/payments/create-order', async (req, res) => {
     try {
-        if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+        const key_id = process.env.RAZORPAY_KEY_ID;
+        const key_secret = process.env.RAZORPAY_KEY_SECRET;
+
+        if (!key_id || !key_secret) {
+            console.error('Razorpay Error: Keys missing in process.env');
             return res.status(500).json({ error: "Razorpay keys are not configured on the server" });
         }
 
+        const instance = new Razorpay({ key_id, key_secret });
+
         const { amount, bookingId } = req.body;
         const options = {
-            amount: Math.round(amount * 100), // amount in the smallest currency unit (paise)
+            amount: Math.round(amount * 100), // amount in paise
             currency: "INR",
             receipt: `receipt_${bookingId}`,
         };
-        const order = await razorpay.orders.create(options);
+
+        const order = await instance.orders.create(options);
         res.json({
             id: order.id,
             currency: order.currency,
             amount: order.amount,
-            keyId: process.env.RAZORPAY_KEY_ID
+            keyId: key_id
         });
     } catch (error) {
-        console.error('Razorpay Order Error:', error);
-        res.status(500).json({ error: error.message });
+        console.error('Razorpay Order Error Details:', JSON.stringify(error, null, 2));
+        const errorMessage = error.error?.description || error.message || "Failed to create order";
+        res.status(500).json({ error: errorMessage });
     }
 });
 
