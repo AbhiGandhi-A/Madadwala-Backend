@@ -1193,6 +1193,29 @@ app.get('/api/users/:uid/favorites', async (req, res) => {
     }
 });
 
+app.patch('/api/users/:uid/profile-image', upload.single('profileImage'), async (req, res) => {
+    try {
+        const uid = req.params.uid;
+        if (!req.file) return res.status(400).json({ error: 'No image provided' });
+
+        const fileName = `profiles/${uid}_${Date.now()}.jpg`;
+        await s3.send(new PutObjectCommand({
+            Bucket: process.env.R2_BUCKET_NAME || process.env.CLOUDFLARE_BUCKET_NAME,
+            Key: fileName,
+            Body: req.file.buffer,
+            ContentType: req.file.mimetype,
+        }));
+        const imageUrl = `${process.env.R2_PUBLIC_URL}/${fileName}`;
+
+        await User.findOneAndUpdate({ uid }, { profileImage: imageUrl });
+
+        res.json({ message: 'Profile image updated', imageUrl });
+    } catch (error) {
+        console.error('Profile image update error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Address Management
 app.post('/api/users/:uid/addresses', async (req, res) => {
     try {
