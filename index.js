@@ -1028,38 +1028,51 @@ app.post('/api/custom-requests/:id/direct-accept', async (req, res) => {
 });
 
 app.post('/api/bookings/:id/complete-payment', async (req, res) => {
+    const bookingId = req.params.id;
+    console.log(`Starting complete-payment for booking: ${bookingId}`);
+
     try {
-        const booking = await Booking.findById(req.params.id);
-        if (!booking) return res.status(404).json({ error: 'Booking not found' });
+        // 1. Find the booking
+        const booking = await Booking.findById(bookingId);
+        if (!booking) {
+            console.error(`Booking not found: ${bookingId}`);
+            return res.status(404).json({ error: 'Booking not found' });
+        }
 
         if (booking.paymentStatus === 'paid' && booking.status === 'done') {
             return res.json({ message: 'Payment already completed' });
         }
 
+        // 2. Update booking status
         booking.paymentStatus = 'paid';
         booking.status = 'done';
         await booking.save();
+        console.log(`Booking ${bookingId} marked as paid/done`);
 
-        // Credit the provider's wallet
-        const provider = await User.findOne({ uid: booking.providerUid });
-        if (provider) {
-            provider.walletBalance = (provider.walletBalance || 0) + booking.totalAmount;
-            await provider.save();
+        // 3. Credit the provider's wallet (Parallelizing where possible)
+        const providerUid = booking.providerUid;
+        if (providerUid) {
+            const providerUpdate = User.findOneAndUpdate(
+                { uid: providerUid },
+                { $inc: { walletBalance: booking.totalAmount } }
+            );
 
-            // Log Transaction
-            const transaction = new Transaction({
-                userUid: booking.providerUid,
+            const transactionLog = new Transaction({
+                userUid: providerUid,
                 type: 'credit',
                 amount: booking.totalAmount,
                 title: 'Job Payment',
                 description: `Payment for ${booking.serviceName} from ${booking.customerName || 'Customer'}`
-            });
-            await transaction.save();
+            }).save();
+
+            // Run wallet update and transaction log in parallel to save time
+            await Promise.all([providerUpdate, transactionLog]);
+            console.log(`Provider ${providerUid} wallet credited with ${booking.totalAmount}`);
         }
 
         res.json({ message: 'Payment completed successfully' });
     } catch (error) {
-        console.error('Complete Payment Error:', error);
+        console.error('Complete Payment Error:', error.message);
         res.status(500).json({ error: error.message });
     }
 });
