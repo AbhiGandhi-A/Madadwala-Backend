@@ -30,15 +30,41 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Middleware to ensure DB connection
+app.use(async (req, res, next) => {
+    try {
+        await connectDB();
+        next();
+    } catch (err) {
+        console.error('Middleware caught DB error:', err.message);
+        res.status(500).json({
+            error: "Database connection failed",
+            details: err.message,
+            hint: "Check MONGODB_URI and IP Whitelist"
+        });
+    }
+});
+
 // Root Route
 app.get('/', (req, res) => {
     res.send('Madadwala Backend is running!');
 });
 
 // MongoDB Connection
-mongoose.connect(process.env.MONGODB_URI)
-    .then(() => console.log('Connected to MongoDB'))
-    .catch(err => console.error('MongoDB connection error:', err));
+const connectDB = async () => {
+    if (mongoose.connection.readyState >= 1) return;
+    try {
+        console.log('Attempting to connect to MongoDB...');
+        await mongoose.connect(process.env.MONGODB_URI, {
+            serverSelectionTimeoutMS: 5000, // Fail after 5s
+            connectTimeoutMS: 10000,
+        });
+        console.log('Successfully connected to MongoDB');
+    } catch (err) {
+        console.error('CRITICAL: MongoDB connection error:', err.message);
+        throw err; // Rethrow to be caught by middleware
+    }
+};
 
 // Cloudflare R2 Client
 const s3 = new S3Client({
