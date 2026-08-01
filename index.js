@@ -99,11 +99,6 @@ const userSchema = new mongoose.Schema({
         accountHolderName: String
     },
     walletBalance: { type: Number, default: 0 },
-    bankDetails: {
-        accountNumber: String,
-        ifscCode: String,
-        accountHolderName: String
-    },
     isVerified: { type: Boolean, default: false },
     favorites: [{ type: String }], // Array of provider UIDs
     addresses: [{
