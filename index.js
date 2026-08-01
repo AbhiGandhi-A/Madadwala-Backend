@@ -1028,7 +1028,40 @@ app.post('/api/custom-requests/:id/direct-accept', async (req, res) => {
 });
 
 app.post('/api/bookings/:id/complete-payment', async (req, res) => {
-    // ... existing code ...
+    try {
+        const booking = await Booking.findById(req.params.id);
+        if (!booking) return res.status(404).json({ error: 'Booking not found' });
+
+        if (booking.paymentStatus === 'paid' && booking.status === 'done') {
+            return res.json({ message: 'Payment already completed' });
+        }
+
+        booking.paymentStatus = 'paid';
+        booking.status = 'done';
+        await booking.save();
+
+        // Credit the provider's wallet
+        const provider = await User.findOne({ uid: booking.providerUid });
+        if (provider) {
+            provider.walletBalance = (provider.walletBalance || 0) + booking.totalAmount;
+            await provider.save();
+
+            // Log Transaction
+            const transaction = new Transaction({
+                userUid: booking.providerUid,
+                type: 'credit',
+                amount: booking.totalAmount,
+                title: 'Job Payment',
+                description: `Payment for ${booking.serviceName} from ${booking.customerName || 'Customer'}`
+            });
+            await transaction.save();
+        }
+
+        res.json({ message: 'Payment completed successfully' });
+    } catch (error) {
+        console.error('Complete Payment Error:', error);
+        res.status(500).json({ error: error.message });
+    }
 });
 
 // Create Razorpay Order
