@@ -592,7 +592,12 @@ app.get('/api/admin/pending-providers', async (req, res) => {
 app.post('/api/admin/approve-provider', async (req, res) => {
     const { uid } = req.body;
     try {
-        await User.findOneAndUpdate({ uid }, { isVerified: true });
+        const verificationDate = new Date().toLocaleDateString('en-GB', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric'
+        });
+        await User.findOneAndUpdate({ uid }, { isVerified: true, verificationDate });
         await Provider.findOneAndUpdate({ uid }, { isVerified: true });
         res.json({ message: 'Provider approved successfully' });
     } catch (error) {
