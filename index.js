@@ -10,20 +10,43 @@ const Razorpay = require('razorpay');
 dotenv.config();
 
 // Razorpay Initialization
-const razorpay = new Razorpay({
-    key_id: process.env.RAZORPAY_KEY_ID,
-    key_secret: process.env.RAZORPAY_KEY_SECRET
-});
+let razorpay;
+try {
+    if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+        razorpay = new Razorpay({
+            key_id: process.env.RAZORPAY_KEY_ID,
+            key_secret: process.env.RAZORPAY_KEY_SECRET
+        });
+        console.log('Razorpay initialized successfully');
+    } else {
+        console.warn('Razorpay keys missing in environment variables. Payouts will not work.');
+    }
+} catch (error) {
+    console.error('Failed to initialize Razorpay:', error.message);
+}
 
 // Firebase Admin Initialization
 if (!admin.apps.length) {
-    admin.initializeApp({
-        credential: admin.credential.cert({
-            project_id: process.env.FIREBASE_PROJECT_ID,
-            client_email: process.env.FIREBASE_CLIENT_EMAIL,
-            private_key: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-        }),
-    });
+    const project_id = process.env.FIREBASE_PROJECT_ID;
+    const client_email = process.env.FIREBASE_CLIENT_EMAIL;
+    const private_key = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+
+    if (project_id && client_email && private_key) {
+        try {
+            admin.initializeApp({
+                credential: admin.credential.cert({
+                    project_id,
+                    client_email,
+                    private_key,
+                }),
+            });
+            console.log('Firebase Admin initialized successfully');
+        } catch (error) {
+            console.error('Firebase Admin initialization error:', error.message);
+        }
+    } else {
+        console.warn('Firebase environment variables missing. Firebase features (like Auth verification) will not work.');
+    }
 }
 
 const app = express();
@@ -548,7 +571,7 @@ app.patch('/api/admin/withdrawals/:id', async (req, res) => {
             try {
                 // Razorpay Payout API Integration
                 // Note: requires RAZORPAYX_ACCOUNT_NUMBER in .env
-                if (process.env.RAZORPAYX_ACCOUNT_NUMBER) {
+                if (process.env.RAZORPAYX_ACCOUNT_NUMBER && razorpay) {
                     const payout = await razorpay.payouts.create({
                         account_number: process.env.RAZORPAYX_ACCOUNT_NUMBER,
                         amount: withdrawal.amount * 100, // in paise
@@ -1213,11 +1236,9 @@ app.post('/api/payments/create-order', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-if (process.env.NODE_ENV !== 'production') {
-    app.listen(PORT, () => {
-        console.log(`Server running on port ${PORT}`);
-    });
-}
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+});
 
 // Admin: Offers
 app.get('/api/offers', async (req, res) => {
