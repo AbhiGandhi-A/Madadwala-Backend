@@ -1,4 +1,6 @@
 const express = require('express');
+const http = require('http');
+const socketIo = require('socket.io');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const dotenv = require('dotenv');
@@ -50,6 +52,14 @@ if (!admin.apps.length) {
 }
 
 const app = express();
+const server = http.createServer(app);
+const io = socketIo(server, {
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST"]
+    }
+});
+
 app.use(cors());
 app.use(express.json());
 
@@ -314,6 +324,19 @@ const supportSessionSchema = new mongoose.Schema({
     lastUpdated: { type: Date, default: Date.now }
 });
 const SupportSession = mongoose.model('SupportSession', supportSessionSchema);
+
+// Call Session Schema
+const callSessionSchema = new mongoose.Schema({
+    bookingId: { type: String, required: true },
+    customerId: { type: String, required: true },
+    partnerId: { type: String, required: true },
+    status: { type: String, enum: ['ringing', 'accepted', 'completed', 'missed', 'declined'], default: 'ringing' },
+    startTime: Date,
+    endTime: Date,
+    duration: Number, // in seconds
+    createdAt: { type: Date, default: Date.now }
+});
+const CallSession = mongoose.model('CallSession', callSessionSchema);
 
 // Middleware to verify Firebase ID Token
 const verifyToken = async (req, res, next) => {
@@ -955,6 +978,44 @@ app.post('/api/providers/:uid/services', async (req, res) => {
 });
 
 // Bookings
+app.post('/api/call/start', async (req, res) => {
+    const { bookingId, customerId, partnerId } = req.body;
+    try {
+        // Backend checks
+        const booking = await Booking.findById(bookingId);
+        if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
+        if (booking.status === 'cancelled' || booking.status === 'done') {
+            return res.status(400).json({ success: false, message: "Booking is not active" });
+        }
+
+        const callSession = new CallSession({
+            bookingId,
+            customerId,
+            partnerId,
+            status: 'ringing'
+        });
+        await callSession.save();
+
+        // Notify Partner via Socket
+        const customer = await User.findOne({ uid: customerId });
+        if (io) {
+            io.to(partnerId).emit("incoming_call", {
+                callId: callSession._id,
+                customerName: customer ? customer.name : "Customer",
+                customerImage: customer ? customer.profileImage : null,
+                bookingId: bookingId
+            });
+        }
+
+        res.json({
+            success: true,
+            callId: callSession._id
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 app.post('/api/bookings', async (req, res) => {
     console.log('Creating new booking:', JSON.stringify(req.body));
     try {
@@ -1188,6 +1249,12 @@ app.patch('/api/bookings/:id/location', async (req, res) => {
             : { customerLat: lat, customerLng: lng };
 
         await Booking.findByIdAndUpdate(req.params.id, update);
+
+        // Notify via Socket for real-time tracking
+        if (io) {
+            io.to(req.params.id).emit('location_update', { lat, lng, role });
+        }
+
         res.json({ message: 'Location updated' });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -1449,8 +1516,82 @@ app.post('/api/payments/create-order', async (req, res) => {
     }
 });
 
+// Socket.IO Logic
+io.on('connection', (socket) => {
+    console.log('New client connected:', socket.id);
+
+    socket.on('join', (userId) => {
+        socket.join(userId);
+        console.log(`User ${userId} joined their room`);
+    });
+
+    socket.on('call_accepted', async (data) => {
+        const { callId } = data;
+        try {
+            const call = await CallSession.findByIdAndUpdate(callId, {
+                status: 'accepted',
+                startTime: new Date()
+            }, { new: true });
+
+            if (call) {
+                io.to(call.customerId).emit('call_accepted', { callId });
+                console.log(`Call ${callId} accepted`);
+            }
+        } catch (err) {
+            console.error('Error accepting call:', err);
+        }
+    });
+
+    socket.on('offer', (data) => {
+        // Forward offer to the other party
+        // data should contain { to, offer }
+        if (data.to) {
+            io.to(data.to).emit('offer', data);
+        }
+    });
+
+    socket.on('answer', (data) => {
+        if (data.to) {
+            io.to(data.to).emit('answer', data);
+        }
+    });
+
+    socket.on('ice_candidate', (data) => {
+        if (data.to) {
+            io.to(data.to).emit('ice_candidate', data);
+        }
+    });
+
+    socket.on('end_call', async (data) => {
+        const { callId } = data;
+        try {
+            const call = await CallSession.findById(callId);
+            if (call && call.status !== 'completed') {
+                const endTime = new Date();
+                const startTime = call.startTime || call.createdAt;
+                const duration = Math.floor((endTime - startTime) / 1000);
+
+                call.status = 'completed';
+                call.endTime = endTime;
+                call.duration = duration;
+                await call.save();
+
+                io.to(call.customerId).emit('call_ended', { callId, duration });
+                io.to(call.partnerId).emit('call_ended', { callId, duration });
+                console.log(`Call ${callId} ended. Duration: ${duration}s`);
+            }
+        } catch (err) {
+            console.error('Error ending call:', err);
+        }
+    });
+
+    socket.on('disconnect', () => {
+        console.log('Client disconnected');
+    });
+});
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
 
