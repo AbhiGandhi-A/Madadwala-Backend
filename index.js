@@ -1435,6 +1435,7 @@ io.on('connection', (socket) => {
     console.log(`[Socket] New client connected: ${socket.id}`);
 
     socket.on('join', (userId) => {
+        socket.userId = userId;
         socket.join(userId);
         console.log(`[Socket] User ${userId} joined their room (Socket ID: ${socket.id})`);
     });
@@ -1473,22 +1474,25 @@ io.on('connection', (socket) => {
     });
 
     socket.on('offer', (data) => {
-        console.log(`[RTC] Forwarding offer from ${socket.id} to ${data.to}`);
+        console.log(`[RTC] Forwarding offer from ${socket.userId} to ${data.to}`);
         if (data.to) {
+            data.from = socket.userId;
             io.to(data.to).emit('offer', data);
         }
     });
 
     socket.on('answer', (data) => {
-        console.log(`[RTC] Forwarding answer from ${socket.id} to ${data.to}`);
+        console.log(`[RTC] Forwarding answer from ${socket.userId} to ${data.to}`);
         if (data.to) {
+            data.from = socket.userId;
             io.to(data.to).emit('answer', data);
         }
     });
 
     socket.on('ice_candidate', (data) => {
-        console.log(`[RTC] Forwarding ICE candidate from ${socket.id} to ${data.to}`);
+        console.log(`[RTC] Forwarding ICE candidate from ${socket.userId} to ${data.to}`);
         if (data.to) {
+            data.from = socket.userId;
             io.to(data.to).emit('ice_candidate', data);
         }
     });
