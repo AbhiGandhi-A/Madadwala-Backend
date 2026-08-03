@@ -979,7 +979,7 @@ app.post('/api/providers/:uid/services', async (req, res) => {
 
 // Bookings
 app.post('/api/call/start', async (req, res) => {
-    const { bookingId, customerId, partnerId } = req.body;
+    const { bookingId, customerId, partnerId, callerId } = req.body;
     try {
         // Backend checks
         const booking = await Booking.findById(bookingId);
@@ -996,16 +996,29 @@ app.post('/api/call/start', async (req, res) => {
         });
         await callSession.save();
 
-        // Notify Partner via Socket
-        const customer = await User.findOne({ uid: customerId });
+        // Determine who is receiving the call
+        // If callerId is provided, use it to find the receiver.
+        // Otherwise fallback to old behavior (customer calling partner)
+        let receiverId = partnerId;
+        let finalCallerId = customerId;
+
+        if (callerId) {
+            finalCallerId = callerId;
+            receiverId = (callerId === customerId) ? partnerId : customerId;
+        }
+
+        // Notify Receiver via Socket
+        const caller = await User.findOne({ uid: finalCallerId });
         if (io) {
-            console.log(`Emitting incoming_call to partner: ${partnerId}`);
-            io.to(partnerId).emit("incoming_call", {
+            console.log(`Emitting incoming_call from ${finalCallerId} to receiver: ${receiverId}`);
+            io.to(receiverId).emit("incoming_call", {
                 callId: callSession._id,
-                customerName: customer ? customer.name : "Customer",
-                customerImage: customer ? customer.profileImage : null,
+                callerName: caller ? caller.name : "Partner",
+                customerName: caller ? caller.name : "Partner", // Backwards compatibility
+                callerImage: caller ? caller.profileImage : null,
+                customerImage: caller ? caller.profileImage : null, // Backwards compatibility
                 bookingId: bookingId,
-                callerId: customerId
+                callerId: finalCallerId
             });
         }
 
