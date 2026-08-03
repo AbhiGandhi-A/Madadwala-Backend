@@ -999,6 +999,19 @@ app.post('/api/bookings/:id/call', async (req, res) => {
         const customerPhone = customer.phoneNumber;
         const providerPhone = provider.phoneNumber;
 
+        // Ensure numbers are in a format Exotel likes (e.g. 0XXXXXXXXXX for India)
+        const formatNumber = (num) => {
+            let clean = num.replace(/\D/g, '');
+            if (clean.length === 10) return '0' + clean;
+            if (clean.length === 12 && clean.startsWith('91')) return '0' + clean.slice(2);
+            return clean;
+        };
+
+        const formattedCustomer = formatNumber(customerPhone);
+        const formattedProvider = formatNumber(providerPhone);
+
+        console.log(`Exotel Call Details: From=${formattedCustomer}, To=${formattedProvider}, CallerId=${process.env.EXOTEL_CALLER_ID}`);
+
         // Exotel configuration from environment variables
         const accountSid = process.env.EXOTEL_ACCOUNT_SID;
         const apiKey = process.env.EXOTEL_API_KEY;
@@ -1007,7 +1020,7 @@ app.post('/api/bookings/:id/call', async (req, res) => {
 
         if (!accountSid || !apiKey || !apiToken || !callerId) {
             console.error('CRITICAL: Exotel environment variables missing');
-            return res.status(500).json({ error: 'Call service not configured on server' });
+            return res.status(500).json({ error: 'Call service not configured on server. Check environment variables.' });
         }
 
         const exotelUrl = `https://api.exotel.com/v1/Accounts/${accountSid}/Calls/connect.json`;
@@ -1015,8 +1028,8 @@ app.post('/api/bookings/:id/call', async (req, res) => {
 
         // Form data for Exotel
         const params = new URLSearchParams();
-        params.append('From', customerPhone);
-        params.append('To', providerPhone);
+        params.append('From', formattedCustomer);
+        params.append('To', formattedProvider);
         params.append('CallerId', callerId);
 
         const response = await fetch(exotelUrl, {
