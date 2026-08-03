@@ -980,6 +980,72 @@ app.post('/api/bookings/:id/verify-otp', async (req, res) => {
     }
 });
 
+// Initiate Call via Exotel
+app.post('/api/bookings/:id/call', async (req, res) => {
+    try {
+        const bookingId = req.params.id;
+        console.log(`Initiating call for booking: ${bookingId}`);
+
+        const booking = await Booking.findById(bookingId);
+        if (!booking) return res.status(404).json({ error: 'Booking not found' });
+
+        const customer = await User.findOne({ uid: booking.customerUid });
+        const provider = await User.findOne({ uid: booking.providerUid });
+
+        if (!customer || !provider) {
+            return res.status(404).json({ error: 'Customer or Provider user data missing' });
+        }
+
+        const customerPhone = customer.phoneNumber;
+        const providerPhone = provider.phoneNumber;
+
+        // Exotel configuration from environment variables
+        const accountSid = process.env.EXOTEL_ACCOUNT_SID;
+        const apiKey = process.env.EXOTEL_API_KEY;
+        const apiToken = process.env.EXOTEL_API_TOKEN;
+        const callerId = process.env.EXOTEL_CALLER_ID;
+
+        if (!accountSid || !apiKey || !apiToken || !callerId) {
+            console.error('CRITICAL: Exotel environment variables missing');
+            return res.status(500).json({ error: 'Call service not configured on server' });
+        }
+
+        const exotelUrl = `https://api.exotel.com/v1/Accounts/${accountSid}/Calls/connect.json`;
+        const auth = Buffer.from(`${apiKey}:${apiToken}`).toString('base64');
+
+        // Form data for Exotel
+        const params = new URLSearchParams();
+        params.append('From', customerPhone);
+        params.append('To', providerPhone);
+        params.append('CallerId', callerId);
+
+        const response = await fetch(exotelUrl, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Basic ${auth}`,
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: params
+        });
+
+        const responseData = await response.json();
+
+        if (response.ok) {
+            console.log(`Call initiated between ${customerPhone} and ${providerPhone}`);
+            res.json({ message: 'Call connected successfully', sid: responseData.Call?.Sid });
+        } else {
+            console.error('Exotel API Error:', responseData);
+            res.status(response.status).json({
+                error: 'Failed to initiate call via partner',
+                details: responseData.RestException?.Message || 'Unknown Exotel Error'
+            });
+        }
+    } catch (error) {
+        console.error('Internal Call Error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.patch('/api/bookings/:id/location', async (req, res) => {
     try {
         const { lat, lng, role } = req.body;
