@@ -307,6 +307,14 @@ const supportMessageSchema = new mongoose.Schema({
 });
 const SupportMessage = mongoose.model('SupportMessage', supportMessageSchema);
 
+// Support Session Schema
+const supportSessionSchema = new mongoose.Schema({
+    userUid: { type: String, required: true, unique: true },
+    status: { type: String, enum: ['bot', 'waiting', 'active', 'closed'], default: 'bot' },
+    lastUpdated: { type: Date, default: Date.now }
+});
+const SupportSession = mongoose.model('SupportSession', supportSessionSchema);
+
 // Middleware to verify Firebase ID Token
 const verifyToken = async (req, res, next) => {
     const idToken = req.headers.authorization?.split('Bearer ')[1];
@@ -770,17 +778,32 @@ app.get('/api/admin/support/chats', async (req, res) => {
 
         const populatedChats = await Promise.all(messages.map(async (chat) => {
             const user = await User.findOne({ uid: chat._id });
+            const session = await SupportSession.findOne({ userUid: chat._id });
             return {
                 userUid: chat._id,
                 userName: user ? user.name : 'User',
                 lastMessage: chat.lastMessage,
                 lastTimestamp: chat.lastTimestamp,
                 unreadCount: chat.unreadCount,
-                status: 'active'
+                status: session ? session.status : 'active'
             };
         }));
 
         res.json(populatedChats);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.patch('/api/support/status/:userId', async (req, res) => {
+    try {
+        const { status } = req.body;
+        await SupportSession.findOneAndUpdate(
+            { userUid: req.params.userId },
+            { status, lastUpdated: Date.now() },
+            { upsert: true }
+        );
+        res.json({ message: 'Status updated' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
