@@ -296,6 +296,17 @@ const settingsSchema = new mongoose.Schema({
 });
 const Settings = mongoose.model('Settings', settingsSchema);
 
+// Support Message Schema
+const supportMessageSchema = new mongoose.Schema({
+    senderUid: { type: String, required: true },
+    receiverUid: { type: String, required: true },
+    message: { type: String, required: true },
+    isAdmin: { type: Boolean, default: false },
+    timestamp: { type: Date, default: Date.now },
+    read: { type: Boolean, default: false }
+});
+const SupportMessage = mongoose.model('SupportMessage', supportMessageSchema);
+
 // Middleware to verify Firebase ID Token
 const verifyToken = async (req, res, next) => {
     const idToken = req.headers.authorization?.split('Bearer ')[1];
@@ -691,6 +702,85 @@ app.get('/api/admin/analytics', async (req, res) => {
             totalRevenue,
             categories
         });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Support Chat Endpoints
+app.get('/api/support/messages/:userId', async (req, res) => {
+    try {
+        const userId = req.params.userId;
+        const messages = await SupportMessage.find({
+            $or: [
+                { senderUid: userId, receiverUid: 'admin' },
+                { senderUid: 'admin', receiverUid: userId }
+            ]
+        }).sort({ timestamp: 1 });
+
+        // Mark as read when admin fetches
+        // In a real app, you'd distinguish who is fetching
+        res.json(messages);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/support/messages', async (req, res) => {
+    try {
+        const newMessage = new SupportMessage(req.body);
+        await newMessage.save();
+        res.status(201).json(newMessage);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/admin/support/chats', async (req, res) => {
+    try {
+        const messages = await SupportMessage.aggregate([
+            {
+                $project: {
+                    userUid: { $cond: [{ $eq: ['$senderUid', 'admin'] }, '$receiverUid', '$senderUid'] },
+                    message: 1,
+                    timestamp: 1,
+                    isAdmin: 1,
+                    read: 1
+                }
+            },
+            { $sort: { timestamp: -1 } },
+            {
+                $group: {
+                    _id: '$userUid',
+                    lastMessage: { $first: '$message' },
+                    lastTimestamp: { $first: '$timestamp' },
+                    unreadCount: {
+                        $sum: {
+                            $cond: [
+                                { $and: [{ $eq: ['$isAdmin', false] }, { $eq: ['$read', false] }] },
+                                1,
+                                0
+                            ]
+                        }
+                    }
+                }
+            },
+            { $sort: { lastTimestamp: -1 } }
+        ]);
+
+        const populatedChats = await Promise.all(messages.map(async (chat) => {
+            const user = await User.findOne({ uid: chat._id });
+            return {
+                userUid: chat._id,
+                userName: user ? user.name : 'User',
+                lastMessage: chat.lastMessage,
+                lastTimestamp: chat.lastTimestamp,
+                unreadCount: chat.unreadCount,
+                status: 'active'
+            };
+        }));
+
+        res.json(populatedChats);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
