@@ -1004,7 +1004,8 @@ app.post('/api/call/start', async (req, res) => {
                 callId: callSession._id,
                 customerName: customer ? customer.name : "Customer",
                 customerImage: customer ? customer.profileImage : null,
-                bookingId: bookingId
+                bookingId: bookingId,
+                callerId: customerId
             });
         }
 
