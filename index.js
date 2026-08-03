@@ -1047,10 +1047,18 @@ app.post('/api/bookings/:id/call', async (req, res) => {
             console.log(`Call initiated between ${customerPhone} and ${providerPhone}`);
             res.json({ message: 'Call connected successfully', sid: responseData.Call?.Sid });
         } else {
-            console.error('Exotel API Error:', responseData);
+            console.error('Exotel API Error Full Response:', JSON.stringify(responseData, null, 2));
+            const exotelMessage = responseData.RestException?.Message || 'Unknown Exotel Error';
+
+            // Add a helpful hint for common trial account errors
+            let hint = "";
+            if (exotelMessage.toLowerCase().includes("not authorized") || exotelMessage.toLowerCase().includes("trial")) {
+                hint = " (HINT: Since you are in Trial Mode, you must add both phone numbers to 'Verified Numbers' in your Exotel Dashboard)";
+            }
+
             res.status(response.status).json({
-                error: 'Failed to initiate call via partner',
-                details: responseData.RestException?.Message || 'Unknown Exotel Error'
+                error: 'Exotel Error',
+                details: exotelMessage + hint
             });
         }
     } catch (error) {
