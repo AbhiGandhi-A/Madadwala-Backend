@@ -1439,6 +1439,19 @@ io.on('connection', (socket) => {
         console.log(`[Socket] User ${userId} joined their room (Socket ID: ${socket.id})`);
     });
 
+    socket.on('ringing', async (data) => {
+        const { callId } = data;
+        try {
+            const call = await CallSession.findById(callId);
+            if (call) {
+                console.log(`[Call] Notifying customer ${call.customerId} that call is ringing`);
+                io.to(call.customerId).emit('ringing', { callId });
+            }
+        } catch (err) {
+            console.error('[Call] Error in ringing event:', err);
+        }
+    });
+
     socket.on('call_accepted', async (data) => {
         const { callId } = data;
         console.log(`[Call] Processing acceptance for Call ID: ${callId}`);
