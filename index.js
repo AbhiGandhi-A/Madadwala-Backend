@@ -53,6 +53,15 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Request Logger Middleware
+app.use((req, res, next) => {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+    if (Object.keys(req.body).length > 0) {
+        console.log('Request Body:', JSON.stringify(req.body, null, 2));
+    }
+    next();
+});
+
 // Middleware to ensure DB connection
 app.use(async (req, res, next) => {
     try {
@@ -327,6 +336,7 @@ app.post('/api/users/register', upload.fields([
     { name: 'profileImage', maxCount: 1 },
     { name: 'aadhaarImage', maxCount: 1 }
 ]), async (req, res) => {
+    console.log(`Starting registration for UID: ${req.body.uid}`);
     try {
         const { uid, phoneNumber, role, name, email, category, profession, aadhaarNumber } = req.body;
 
@@ -428,6 +438,7 @@ app.post('/api/users/register', upload.fields([
             await Provider.findOneAndUpdate({ uid }, { startingPrice: minPrice });
         }
 
+        console.log(`Registration successful for UID: ${uid}`);
         res.status(201).json(newUser);
     } catch (error) {
         console.error('Registration error:', error);
@@ -832,10 +843,12 @@ app.post('/api/providers/:uid/services', async (req, res) => {
 
 // Bookings
 app.post('/api/bookings', async (req, res) => {
+    console.log('Creating new booking:', JSON.stringify(req.body));
     try {
         const otp = Math.floor(1000 + Math.random() * 9000).toString();
         const newBooking = new Booking({ ...req.body, otp });
         await newBooking.save();
+        console.log(`Booking created successfully with ID: ${newBooking._id}`);
         res.status(201).json(newBooking);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -1222,6 +1235,7 @@ app.post('/api/payments/create-order', async (req, res) => {
         };
 
         const order = await instance.orders.create(options);
+        console.log(`Razorpay order created: ${order.id} for booking: ${bookingId}`);
         res.json({
             id: order.id,
             currency: order.currency,
