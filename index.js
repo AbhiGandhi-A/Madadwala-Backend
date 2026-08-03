@@ -999,6 +999,7 @@ app.post('/api/call/start', async (req, res) => {
         // Notify Partner via Socket
         const customer = await User.findOne({ uid: customerId });
         if (io) {
+            console.log(`Emitting incoming_call to partner: ${partnerId}`);
             io.to(partnerId).emit("incoming_call", {
                 callId: callSession._id,
                 customerName: customer ? customer.name : "Customer",
@@ -1150,93 +1151,6 @@ app.post('/api/bookings/:id/verify-otp', async (req, res) => {
             res.status(400).json({ success: false, message: 'Invalid OTP' });
         }
     } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Initiate Call via Exotel
-app.post('/api/bookings/:id/call', async (req, res) => {
-    try {
-        const bookingId = req.params.id;
-        console.log(`Initiating call for booking: ${bookingId}`);
-
-        const booking = await Booking.findById(bookingId);
-        if (!booking) return res.status(404).json({ error: 'Booking not found' });
-
-        const customer = await User.findOne({ uid: booking.customerUid });
-        const provider = await User.findOne({ uid: booking.providerUid });
-
-        if (!customer || !provider) {
-            return res.status(404).json({ error: 'Customer or Provider user data missing' });
-        }
-
-        const customerPhone = customer.phoneNumber;
-        const providerPhone = provider.phoneNumber;
-
-        // Ensure numbers are in a format Exotel likes (e.g. 0XXXXXXXXXX for India)
-        const formatNumber = (num) => {
-            let clean = num.replace(/\D/g, '');
-            if (clean.length === 10) return '0' + clean;
-            if (clean.length === 12 && clean.startsWith('91')) return '0' + clean.slice(2);
-            return clean;
-        };
-
-        const formattedCustomer = formatNumber(customerPhone);
-        const formattedProvider = formatNumber(providerPhone);
-
-        console.log(`Exotel Call Details: From=${formattedCustomer}, To=${formattedProvider}, CallerId=${process.env.EXOTEL_CALLER_ID}`);
-
-        // Exotel configuration from environment variables
-        const accountSid = process.env.EXOTEL_ACCOUNT_SID;
-        const apiKey = process.env.EXOTEL_API_KEY;
-        const apiToken = process.env.EXOTEL_API_TOKEN;
-        const callerId = process.env.EXOTEL_CALLER_ID;
-
-        if (!accountSid || !apiKey || !apiToken || !callerId) {
-            console.error('CRITICAL: Exotel environment variables missing');
-            return res.status(500).json({ error: 'Call service not configured on server. Check environment variables.' });
-        }
-
-        const exotelUrl = `https://api.exotel.com/v1/Accounts/${accountSid}/Calls/connect.json`;
-        const auth = Buffer.from(`${apiKey}:${apiToken}`).toString('base64');
-
-        // Form data for Exotel
-        const params = new URLSearchParams();
-        params.append('From', formattedCustomer);
-        params.append('To', formattedProvider);
-        params.append('CallerId', callerId);
-
-        const response = await fetch(exotelUrl, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Basic ${auth}`,
-                'Content-Type': 'application/x-www-form-urlencoded'
-            },
-            body: params
-        });
-
-        const responseData = await response.json();
-
-        if (response.ok) {
-            console.log(`Call initiated between ${customerPhone} and ${providerPhone}`);
-            res.json({ message: 'Call connected successfully', sid: responseData.Call?.Sid });
-        } else {
-            console.error('Exotel API Error Full Response:', JSON.stringify(responseData, null, 2));
-            const exotelMessage = responseData.RestException?.Message || 'Unknown Exotel Error';
-
-            // Add a helpful hint for common trial account errors
-            let hint = "";
-            if (exotelMessage.toLowerCase().includes("not authorized") || exotelMessage.toLowerCase().includes("trial")) {
-                hint = " (HINT: Since you are in Trial Mode, you must add both phone numbers to 'Verified Numbers' in your Exotel Dashboard)";
-            }
-
-            res.status(response.status).json({
-                error: 'Exotel Error',
-                details: exotelMessage + hint
-            });
-        }
-    } catch (error) {
-        console.error('Internal Call Error:', error.message);
         res.status(500).json({ error: error.message });
     }
 });
@@ -1518,15 +1432,16 @@ app.post('/api/payments/create-order', async (req, res) => {
 
 // Socket.IO Logic
 io.on('connection', (socket) => {
-    console.log('New client connected:', socket.id);
+    console.log(`[Socket] New client connected: ${socket.id}`);
 
     socket.on('join', (userId) => {
         socket.join(userId);
-        console.log(`User ${userId} joined their room`);
+        console.log(`[Socket] User ${userId} joined their room (Socket ID: ${socket.id})`);
     });
 
     socket.on('call_accepted', async (data) => {
         const { callId } = data;
+        console.log(`[Call] Processing acceptance for Call ID: ${callId}`);
         try {
             const call = await CallSession.findByIdAndUpdate(callId, {
                 status: 'accepted',
@@ -1534,29 +1449,32 @@ io.on('connection', (socket) => {
             }, { new: true });
 
             if (call) {
+                console.log(`[Call] Emitting call_accepted to customer: ${call.customerId}`);
                 io.to(call.customerId).emit('call_accepted', { callId });
-                console.log(`Call ${callId} accepted`);
+            } else {
+                console.warn(`[Call] Failed to find call session: ${callId}`);
             }
         } catch (err) {
-            console.error('Error accepting call:', err);
+            console.error('[Call] Error in call_accepted:', err);
         }
     });
 
     socket.on('offer', (data) => {
-        // Forward offer to the other party
-        // data should contain { to, offer }
+        console.log(`[RTC] Forwarding offer from ${socket.id} to ${data.to}`);
         if (data.to) {
             io.to(data.to).emit('offer', data);
         }
     });
 
     socket.on('answer', (data) => {
+        console.log(`[RTC] Forwarding answer from ${socket.id} to ${data.to}`);
         if (data.to) {
             io.to(data.to).emit('answer', data);
         }
     });
 
     socket.on('ice_candidate', (data) => {
+        console.log(`[RTC] Forwarding ICE candidate from ${socket.id} to ${data.to}`);
         if (data.to) {
             io.to(data.to).emit('ice_candidate', data);
         }
@@ -1564,6 +1482,7 @@ io.on('connection', (socket) => {
 
     socket.on('end_call', async (data) => {
         const { callId } = data;
+        console.log(`[Call] Request to end call: ${callId}`);
         try {
             const call = await CallSession.findById(callId);
             if (call && call.status !== 'completed') {
@@ -1576,17 +1495,17 @@ io.on('connection', (socket) => {
                 call.duration = duration;
                 await call.save();
 
+                console.log(`[Call] Notifying parties of end: ${call.customerId} and ${call.partnerId}`);
                 io.to(call.customerId).emit('call_ended', { callId, duration });
                 io.to(call.partnerId).emit('call_ended', { callId, duration });
-                console.log(`Call ${callId} ended. Duration: ${duration}s`);
             }
         } catch (err) {
-            console.error('Error ending call:', err);
+            console.error('[Call] Error in end_call:', err);
         }
     });
 
     socket.on('disconnect', () => {
-        console.log('Client disconnected');
+        console.log(`[Socket] Client disconnected: ${socket.id}`);
     });
 });
 
