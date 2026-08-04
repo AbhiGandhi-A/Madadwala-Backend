@@ -72,20 +72,7 @@ app.use((req, res, next) => {
     next();
 });
 
-// Middleware to ensure DB connection
-app.use(async (req, res, next) => {
-    try {
-        await connectDB();
-        next();
-    } catch (err) {
-        console.error('Middleware caught DB error:', err.message);
-        res.status(500).json({
-            error: "Database connection failed",
-            details: err.message,
-            hint: "Check MONGODB_URI and IP Whitelist"
-        });
-    }
-});
+
 
 // Root Route
 app.get('/', (req, res) => {
@@ -98,6 +85,8 @@ const connectDB = async () => {
     try {
         console.log('Attempting to connect to MongoDB...');
         await mongoose.connect(process.env.MONGODB_URI, {
+            maxPoolSize: 20,
+            minPoolSize: 5,
             serverSelectionTimeoutMS: 5000, // Fail after 5s
             connectTimeoutMS: 10000,
         });
@@ -340,6 +329,8 @@ const sendFCMNotification = async (uid, title, body, data = {}) => {
             return;
         }
 
+        const isCall = data.type === 'call' || data.callId;
+
         const message = {
             notification: { title, body },
             data: { ...data, title, body },
@@ -347,7 +338,7 @@ const sendFCMNotification = async (uid, title, body, data = {}) => {
             android: {
                 priority: 'high',
                 notification: {
-                    channel_id: 'madadwala_notifications'
+                    channel_id: isCall ? 'madadwala_calls' : 'madadwala_notifications'
                 }
             }
         };
@@ -1104,6 +1095,22 @@ app.post('/api/call/start', async (req, res) => {
             });
         }
 
+        // ALSO Notify via FCM for cases where app is closed
+        sendFCMNotification(
+            receiverId,
+            'Incoming Call',
+            `${caller ? caller.name : 'Someone'} is calling you regarding your booking.`,
+            {
+                type: 'call',
+                screen: 'voice_call',
+                callId: callSession._id.toString(),
+                callerName: caller ? caller.name : "Partner",
+                callerImage: caller ? caller.profileImage : "",
+                bookingId: bookingId,
+                callerId: finalCallerId
+            }
+        );
+
         res.json({
             success: true,
             callId: callSession._id
@@ -1593,6 +1600,20 @@ io.on('connection', (socket) => {
         console.log(`[Socket] User ${userId} joined their room (Socket ID: ${socket.id})`);
     });
 
+    socket.on('join_booking', (bookingId) => {
+        socket.join(bookingId);
+        console.log(`[Socket] Socket ${socket.id} joined booking room: ${bookingId}`);
+    });
+
+    socket.on('update_location', (data) => {
+        const { bookingId, lat, lng, role } = data;
+        if (bookingId) {
+            // Instant broadcast to anyone else in the booking room (e.g. the customer)
+            io.to(bookingId).emit('location_update', { lat, lng, role });
+            console.log(`[Socket] Location update for booking ${bookingId} from ${role}`);
+        }
+    });
+
     socket.on('ringing', async (data) => {
         const { callId } = data;
         try {
@@ -1688,9 +1709,21 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
+const startServer = async () => {
+    try {
+        await connectDB();
+
+        server.listen(PORT, () => {
+            console.log(`Server running on ${PORT}`);
+        });
+
+    } catch (err) {
+        console.error(err);
+        process.exit(1);
+    }
+};
+
+startServer();
 
 // Admin: Offers
 app.get('/api/offers', async (req, res) => {
