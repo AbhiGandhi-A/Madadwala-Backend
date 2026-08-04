@@ -336,13 +336,11 @@ const sendFCMNotification = async (uid, title, body, data = {}) => {
             token: user.fcmToken,
             android: {
                 priority: 'high',
-                ttl: 0
+                ttl: 0,
+                direct_boot_ok: true
             }
         };
 
-        // For standard notifications, include the notification block
-        // For calls, we send data-only to ensure onMessageReceived is called in the app
-        // This is necessary for the Full Screen Intent (Incoming Screen) to work
         if (!isCall) {
             message.notification = { title, body };
             message.android.notification = {
@@ -351,9 +349,6 @@ const sendFCMNotification = async (uid, title, body, data = {}) => {
                 category: 'msg',
                 visibility: 'public'
             };
-        } else {
-            // For calls, some systems need these headers to prioritize data messages
-            message.android.direct_boot_ok = true;
         }
 
         const response = await admin.messaging().send(message);
