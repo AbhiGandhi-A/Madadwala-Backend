@@ -335,8 +335,10 @@ const sendFCMNotification = async (uid, title, body, data = {}) => {
             data: { ...data, title, body },
             token: user.fcmToken,
             android: {
-                priority: 'high'
-            }
+                priority: 'high',
+                ttl: 0 // Deliver immediately
+            },
+            priority: 'high' // Set priority at root for older FCM versions
         };
 
         // For standard notifications, include the notification block
