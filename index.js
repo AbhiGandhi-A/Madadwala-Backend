@@ -332,21 +332,30 @@ const sendFCMNotification = async (uid, title, body, data = {}) => {
         const isCall = data.type === 'call' || data.callId;
 
         const message = {
-            notification: { title, body },
             data: { ...data, title, body },
             token: user.fcmToken,
             android: {
                 priority: 'high',
-                ttl: 0,
-                notification: {
-                    channel_id: isCall ? 'madadwala_calls' : 'madadwala_notifications',
-                    priority: 'high',
-                    category: isCall ? 'call' : 'msg',
-                    visibility: 'public'
-                }
+                ttl: 0
             },
             priority: 'high'
         };
+
+        // For standard notifications, include the notification block
+        // For calls, we send data-only to ensure onMessageReceived is called in the app
+        // This is necessary for the Full Screen Intent (Incoming Screen) to work
+        if (!isCall) {
+            message.notification = { title, body };
+            message.android.notification = {
+                channel_id: 'madadwala_notifications',
+                priority: 'high',
+                category: 'msg',
+                visibility: 'public'
+            };
+        } else {
+            // For calls, some systems need these headers to prioritize data messages
+            message.android.direct_boot_ok = true;
+        }
 
         const response = await admin.messaging().send(message);
         console.log(`FCM: Notification sent to ${uid}: ${response}`);
