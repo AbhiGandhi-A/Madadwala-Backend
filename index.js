@@ -151,6 +151,7 @@ const userSchema = new mongoose.Schema({
         lat: Number,
         lng: Number
     }],
+    fcmToken: String,
     dailyOnline: [{ type: String }], // Array of dates 'YYYY-MM-DD'
     createdAt: { type: Date, default: Date.now }
 });
@@ -325,6 +326,61 @@ const supportSessionSchema = new mongoose.Schema({
 });
 const SupportSession = mongoose.model('SupportSession', supportSessionSchema);
 
+// FCM Notification Helper
+const sendFCMNotification = async (uid, title, body, data = {}) => {
+    try {
+        const user = await User.findOne({ uid });
+        if (!user || !user.fcmToken) {
+            console.log(`FCM: Skipping notification for ${uid}, no token found.`);
+            return;
+        }
+
+        const message = {
+            notification: { title, body },
+            data: { ...data, title, body },
+            token: user.fcmToken,
+            android: {
+                priority: 'high',
+                notification: {
+                    channel_id: 'madadwala_notifications',
+                    click_action: 'OPEN_ACTIVITY_1'
+                }
+            }
+        };
+
+        const response = await admin.messaging().send(message);
+        console.log(`FCM: Notification sent to ${uid}: ${response}`);
+    } catch (error) {
+        console.error(`FCM: Error sending to ${uid}:`, error.message);
+    }
+};
+
+const broadcastFCMNotification = async (uids, title, body, data = {}) => {
+    try {
+        const users = await User.find({ uid: { $in: uids }, fcmToken: { $exists: true } });
+        const tokens = users.map(u => u.fcmToken).filter(t => t);
+
+        if (tokens.length === 0) return;
+
+        const message = {
+            notification: { title, body },
+            data: { ...data, title, body },
+            tokens: tokens,
+            android: {
+                priority: 'high',
+                notification: {
+                    channel_id: 'madadwala_notifications'
+                }
+            }
+        };
+
+        const response = await admin.messaging().sendMulticast(message);
+        console.log(`FCM: Broadcast sent to ${response.successCount} users.`);
+    } catch (error) {
+        console.error(`FCM: Error in broadcast:`, error.message);
+    }
+};
+
 // Call Session Schema
 const callSessionSchema = new mongoose.Schema({
     bookingId: { type: String, required: true },
@@ -374,6 +430,16 @@ app.get('/api/users/check', async (req, res) => {
 });
 
 // Register User
+app.post('/api/users/fcm-token', async (req, res) => {
+    const { uid, fcmToken } = req.body;
+    try {
+        await User.findOneAndUpdate({ uid }, { fcmToken });
+        res.json({ message: 'FCM token updated successfully' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.post('/api/users/register', upload.fields([
     { name: 'profileImage', maxCount: 1 },
     { name: 'aadhaarImage', maxCount: 1 }
@@ -1038,42 +1104,14 @@ app.post('/api/bookings', async (req, res) => {
         const newBooking = new Booking({ ...req.body, otp });
         await newBooking.save();
         console.log(`Booking created successfully with ID: ${newBooking._id}`);
-        res.status(201).json(newBooking);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
 
-app.post('/api/custom-requests/:id/direct-accept', async (req, res) => {
-    try {
-        const { providerUid, providerName } = req.body;
-        const customReq = await CustomRequest.findById(req.params.id);
-        if (!customReq) return res.status(404).json({ error: 'Request not found' });
-        if (customReq.status !== 'pending') return res.status(400).json({ error: 'Request already processed' });
-
-        customReq.status = 'accepted';
-        customReq.acceptedProviderUid = providerUid;
-        await customReq.save();
-
-        // Use the price offered by the customer
-        const price = customReq.minPrice || 0;
-        const otp = Math.floor(1000 + Math.random() * 9000).toString();
-
-        const newBooking = new Booking({
-            customerUid: customReq.customerUid,
-            customerName: customReq.customerName,
-            providerUid: providerUid,
-            providerName: providerName,
-            serviceName: customReq.category + " (Custom)",
-            status: 'accepted',
-            address: customReq.customerName + "'s Location",
-            scheduledTime: "ASAP",
-            totalAmount: price,
-            otp: otp,
-            customerLat: customReq.lat,
-            customerLng: customReq.lng
-        });
-        await newBooking.save();
+        // Notify Provider
+        sendFCMNotification(
+            newBooking.providerUid,
+            'New Booking Received!',
+            `You have a new booking from ${newBooking.customerName} for ${newBooking.serviceName}.`,
+            { bookingId: newBooking._id.toString(), screen: 'active_job' }
+        );
 
         res.status(201).json(newBooking);
     } catch (error) {
@@ -1144,7 +1182,37 @@ app.patch('/api/bookings/:id', async (req, res) => {
         if (scheduledTime) update.scheduledTime = scheduledTime;
         if (partnerComment) update.partnerComment = partnerComment;
 
-        await Booking.findByIdAndUpdate(req.params.id, update);
+        const booking = await Booking.findByIdAndUpdate(req.params.id, update, { new: true });
+
+        // Notify Customer
+        if (status && booking) {
+            let title = 'Booking Update';
+            let message = `Your booking for ${booking.serviceName} status is now: ${status.replace('_', ' ')}.`;
+            let screen = 'tracking';
+
+            if (status === 'accepted') {
+                title = 'Booking Accepted!';
+                message = `${booking.providerName} has accepted your booking for ${booking.serviceName}.`;
+            } else if (status === 'on_the_way') {
+                title = 'Partner is on the way!';
+                message = `${booking.providerName} is heading to your location.`;
+            } else if (status === 'arrived') {
+                title = 'Partner Arrived!';
+                message = `${booking.providerName} has arrived at your location.`;
+            } else if (status === 'done') {
+                title = 'Service Completed!';
+                message = `Your service for ${booking.serviceName} has been completed. Please proceed to payment.`;
+                screen = 'payment';
+            }
+
+            sendFCMNotification(
+                booking.customerUid,
+                title,
+                message,
+                { bookingId: booking._id.toString(), screen: screen }
+            );
+        }
+
         res.json({ message: 'Booking updated' });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -1214,6 +1282,22 @@ app.post('/api/custom-requests', async (req, res) => {
     try {
         const newRequest = new CustomRequest(req.body);
         await newRequest.save();
+
+        // Broadcast to relevant providers
+        const providers = await Provider.find({
+            category: newRequest.category,
+            isAvailable: true,
+            isVerified: true
+        });
+        const uids = providers.map(p => p.uid);
+
+        broadcastFCMNotification(
+            uids,
+            'New Help Request!',
+            `A new request for ${newRequest.category} is available near you.`,
+            { requestId: newRequest._id.toString(), screen: 'provider_dashboard' }
+        );
+
         res.status(201).json({ message: 'Request created successfully' });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -1269,6 +1353,15 @@ app.post('/api/custom-requests/:id/bid', async (req, res) => {
 
         request.bids.push({ providerUid, providerName, price });
         await request.save();
+
+        // Notify Customer
+        sendFCMNotification(
+            request.customerUid,
+            'New Bid Received!',
+            `${providerName} has placed a bid of ₹${price} on your request.`,
+            { requestId: request._id.toString(), screen: 'notifications' }
+        );
+
         res.json({ message: 'Bid submitted' });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -1303,6 +1396,14 @@ app.post('/api/custom-requests/:id/accept-bid', async (req, res) => {
             customerLng: customReq.lng
         });
         await newBooking.save();
+
+        // Notify Provider
+        sendFCMNotification(
+            providerUid,
+            'Job Confirmed!',
+            `Your bid was accepted by ${customReq.customerName}. Job started!`,
+            { bookingId: newBooking._id.toString(), screen: 'active_job' }
+        );
 
         res.status(201).json(newBooking);
     } catch (error) {
@@ -1340,6 +1441,14 @@ app.post('/api/custom-requests/:id/direct-accept', async (req, res) => {
             customerLng: customReq.lng
         });
         await newBooking.save();
+
+        // Notify Provider
+        sendFCMNotification(
+            providerUid,
+            'Job Confirmed!',
+            `Your bid was accepted by ${customReq.customerName}. Job started!`,
+            { bookingId: newBooking._id.toString(), screen: 'active_job' }
+        );
 
         res.status(201).json(newBooking);
     } catch (error) {
