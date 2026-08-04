@@ -1147,15 +1147,17 @@ app.get('/api/bookings/customer/:uid', async (req, res) => {
         }
         const bookings = await Booking.find({ customerUid: uid }).sort({ createdAt: -1 });
 
-        // Ensure provider names are present for accepted bookings
+        // Ensure provider details are present for bookings
         const enrichedBookings = await Promise.all(bookings.map(async (b) => {
-            if (!b.providerName && b.providerUid) {
-                const provider = await User.findOne({ uid: b.providerUid });
+            let bookingObj = b.toObject();
+            if (bookingObj.providerUid) {
+                const provider = await User.findOne({ uid: bookingObj.providerUid });
                 if (provider) {
-                    b.providerName = provider.name;
+                    if (!bookingObj.providerName) bookingObj.providerName = provider.name;
+                    bookingObj.providerImage = provider.profileImage;
                 }
             }
-            return b;
+            return bookingObj;
         }));
 
         res.json(enrichedBookings);
