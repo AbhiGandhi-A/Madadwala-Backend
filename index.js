@@ -333,7 +333,30 @@ const SupportSession = mongoose.model('SupportSession', supportSessionSchema);
 
 // FCM Notification Helper
 const sendFCMNotification = async (uid, title, body, data = {}) => {
-    // ... existing code ...
+    try {
+        const user = await User.findOne({ uid });
+        if (!user || !user.fcmToken) {
+            console.log(`FCM: Skipping notification for ${uid}, no token found.`);
+            return;
+        }
+
+        const message = {
+            notification: { title, body },
+            data: { ...data, title, body },
+            token: user.fcmToken,
+            android: {
+                priority: 'high',
+                notification: {
+                    channel_id: 'madadwala_notifications'
+                }
+            }
+        };
+
+        const response = await admin.messaging().send(message);
+        console.log(`FCM: Notification sent to ${uid}: ${response}`);
+    } catch (error) {
+        console.error(`FCM: Error sending to ${uid}:`, error.message);
+    }
 };
 
 const logActivity = async (uid, event, description) => {
