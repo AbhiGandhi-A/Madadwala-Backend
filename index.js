@@ -1469,7 +1469,8 @@ io.on('connection', (socket) => {
 
     socket.on('call_accepted', async (data) => {
         const { callId } = data;
-        console.log(`[Call] Processing acceptance for Call ID: ${callId}`);
+        const acceptorId = socket.userId;
+        console.log(`[Call] ${acceptorId} accepted Call ID: ${callId}`);
         try {
             const call = await CallSession.findByIdAndUpdate(callId, {
                 status: 'accepted',
@@ -1477,8 +1478,10 @@ io.on('connection', (socket) => {
             }, { new: true });
 
             if (call) {
-                console.log(`[Call] Emitting call_accepted to customer: ${call.customerId}`);
-                io.to(call.customerId).emit('call_accepted', { callId });
+                // Notify the OTHER party
+                const targetId = (acceptorId === call.customerId) ? call.partnerId : call.customerId;
+                console.log(`[Call] Notifying caller ${targetId} that call was accepted`);
+                io.to(targetId).emit('call_accepted', { callId });
             } else {
                 console.warn(`[Call] Failed to find call session: ${callId}`);
             }
@@ -1513,7 +1516,8 @@ io.on('connection', (socket) => {
 
     socket.on('end_call', async (data) => {
         const { callId } = data;
-        console.log(`[Call] Request to end call: ${callId}`);
+        const enderId = socket.userId;
+        console.log(`[Call] ${enderId} requested to end call: ${callId}`);
         try {
             const call = await CallSession.findById(callId);
             if (call && call.status !== 'completed') {
@@ -1529,6 +1533,10 @@ io.on('connection', (socket) => {
                 console.log(`[Call] Notifying parties of end: ${call.customerId} and ${call.partnerId}`);
                 io.to(call.customerId).emit('call_ended', { callId, duration });
                 io.to(call.partnerId).emit('call_ended', { callId, duration });
+            } else if (call) {
+                // If already completed but we got another end_call, just notify again to be safe
+                io.to(call.customerId).emit('call_ended', { callId });
+                io.to(call.partnerId).emit('call_ended', { callId });
             }
         } catch (err) {
             console.error('[Call] Error in end_call:', err);
