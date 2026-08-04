@@ -153,6 +153,11 @@ const userSchema = new mongoose.Schema({
     }],
     fcmToken: String,
     dailyOnline: [{ type: String }], // Array of dates 'YYYY-MM-DD'
+    activityLog: [{
+        event: String,
+        description: String,
+        timestamp: { type: Date, default: Date.now }
+    }],
     createdAt: { type: Date, default: Date.now }
 });
 
@@ -328,30 +333,17 @@ const SupportSession = mongoose.model('SupportSession', supportSessionSchema);
 
 // FCM Notification Helper
 const sendFCMNotification = async (uid, title, body, data = {}) => {
+    // ... existing code ...
+};
+
+const logActivity = async (uid, event, description) => {
     try {
-        const user = await User.findOne({ uid });
-        if (!user || !user.fcmToken) {
-            console.log(`FCM: Skipping notification for ${uid}, no token found.`);
-            return;
-        }
-
-        const message = {
-            notification: { title, body },
-            data: { ...data, title, body },
-            token: user.fcmToken,
-            android: {
-                priority: 'high',
-                notification: {
-                    channel_id: 'madadwala_notifications',
-                    click_action: 'OPEN_ACTIVITY_1'
-                }
-            }
-        };
-
-        const response = await admin.messaging().send(message);
-        console.log(`FCM: Notification sent to ${uid}: ${response}`);
-    } catch (error) {
-        console.error(`FCM: Error sending to ${uid}:`, error.message);
+        await User.findOneAndUpdate(
+            { uid },
+            { $push: { activityLog: { $each: [{ event, description }], $slice: -50 } } }
+        );
+    } catch (err) {
+        console.error('Activity Log Error:', err.message);
     }
 };
 
@@ -434,6 +426,7 @@ app.post('/api/users/fcm-token', async (req, res) => {
     const { uid, fcmToken } = req.body;
     try {
         await User.findOneAndUpdate({ uid }, { fcmToken });
+        logActivity(uid, 'SESSION_START', 'User logged in and updated FCM token');
         res.json({ message: 'FCM token updated successfully' });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -1105,6 +1098,10 @@ app.post('/api/bookings', async (req, res) => {
         await newBooking.save();
         console.log(`Booking created successfully with ID: ${newBooking._id}`);
 
+        // Log Activity
+        logActivity(newBooking.customerUid, 'BOOKING_CREATED', `Booked ${newBooking.serviceName} for ₹${newBooking.totalAmount}`);
+        logActivity(newBooking.providerUid, 'NEW_JOB_RECEIVED', `Received a new booking for ${newBooking.serviceName}`);
+
         // Notify Provider
         sendFCMNotification(
             newBooking.providerUid,
@@ -1183,6 +1180,12 @@ app.patch('/api/bookings/:id', async (req, res) => {
         if (partnerComment) update.partnerComment = partnerComment;
 
         const booking = await Booking.findByIdAndUpdate(req.params.id, update, { new: true });
+
+        // Log Activity
+        if (status && booking) {
+            logActivity(booking.providerUid, 'STATUS_UPDATE', `Updated booking ${booking._id} status to ${status}`);
+            logActivity(booking.customerUid, 'STATUS_RECEIVED', `Booking ${booking._id} status changed to ${status}`);
+        }
 
         // Notify Customer
         if (status && booking) {
@@ -1477,6 +1480,8 @@ app.post('/api/bookings/:id/complete-payment', async (req, res) => {
         booking.status = 'done';
         await booking.save();
         console.log(`Booking ${bookingId} marked as paid/done`);
+
+        logActivity(booking.customerUid, 'PAYMENT_COMPLETED', `Paid ₹${booking.totalAmount} for ${booking.serviceName}`);
 
         // 3. Credit the provider's wallet
         const providerUid = booking.providerUid;
