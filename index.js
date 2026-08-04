@@ -337,8 +337,7 @@ const sendFCMNotification = async (uid, title, body, data = {}) => {
             android: {
                 priority: 'high',
                 ttl: 0
-            },
-            priority: 'high'
+            }
         };
 
         // For standard notifications, include the notification block
