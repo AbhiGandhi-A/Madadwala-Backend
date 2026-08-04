@@ -340,7 +340,9 @@ const sendFCMNotification = async (uid, title, body, data = {}) => {
                 ttl: 0,
                 notification: {
                     channel_id: isCall ? 'madadwala_calls' : 'madadwala_notifications',
-                    priority: 'high'
+                    priority: 'high',
+                    category: isCall ? 'call' : 'msg',
+                    visibility: 'public'
                 }
             },
             priority: 'high'
