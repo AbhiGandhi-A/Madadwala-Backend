@@ -332,16 +332,21 @@ const sendFCMNotification = async (uid, title, body, data = {}) => {
         const isCall = data.type === 'call' || data.callId;
 
         const message = {
-            notification: { title, body },
             data: { ...data, title, body },
             token: user.fcmToken,
             android: {
-                priority: 'high',
-                notification: {
-                    channel_id: isCall ? 'madadwala_calls' : 'madadwala_notifications'
-                }
+                priority: 'high'
             }
         };
+
+        // For standard notifications, include the notification block
+        // For calls, we send data-only to ensure onMessageReceived is called in the app
+        if (!isCall) {
+            message.notification = { title, body };
+            message.android.notification = {
+                channel_id: 'madadwala_notifications'
+            };
+        }
 
         const response = await admin.messaging().send(message);
         console.log(`FCM: Notification sent to ${uid}: ${response}`);
