@@ -1,0 +1,25 @@
+{
+  "name": "madadwala-admin",
+  "version": "1.0.0",
+  "description": "Admin Panel for Madadwala Service Platform",
+  "scripts": {
+    "dev": "next dev -p 3001",
+    "build": "next build",
+    "start": "next start -p 3001",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "autoprefixer": "^10.5.4",
+    "axios": "^1.19.0",
+    "clsx": "^2.1.1",
+    "js-cookie": "^3.0.8",
+    "lucide-react": "^1.28.0",
+    "next": "^16.3.0",
+    "postcss": "^8.5.25",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "recharts": "^3.10.1",
+    "swr": "^2.5.0",
+    "tailwindcss": "^4.3.3"
+  }
+}
