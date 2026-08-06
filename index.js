@@ -133,6 +133,7 @@ const userSchema = new mongoose.Schema({
     totalEarnings: { type: Number, default: 0 },
     totalJobs: { type: Number, default: 0 },
     isVerified: { type: Boolean, default: false },
+    isBlocked: { type: Boolean, default: false },
     favorites: [{ type: String }], // Array of provider UIDs
     addresses: [{
         label: String, // 'Home', 'Work', etc.
@@ -432,6 +433,15 @@ const verifyToken = async (req, res, next) => {
 };
 
 // Check if user exists
+app.get('/api/users', async (req, res) => {
+    try {
+        const users = await User.find().sort({ createdAt: -1 });
+        res.json(users);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.get('/api/users/check', async (req, res) => {
     const { phoneNumber, uid } = req.query;
     try {
@@ -793,8 +803,8 @@ app.get('/api/wallet/transactions/:uid', async (req, res) => {
 // Admin: Get analytics
 app.get('/api/admin/analytics', async (req, res) => {
     try {
-        const totalUsers = await User.countDocuments({ role: 'customer' });
-        const totalProviders = await User.countDocuments({ role: 'provider', isVerified: true });
+        const totalUsers = await User.countDocuments();
+        const totalProviders = await User.countDocuments({ role: 'provider' });
         const totalBookings = await Booking.countDocuments();
 
         // Calculate total revenue from completed bookings
@@ -804,16 +814,21 @@ app.get('/api/admin/analytics', async (req, res) => {
         ]);
         const totalRevenue = revenueResult.length > 0 ? revenueResult[0].total : 0;
 
+        // Total withdrawals
+        const withdrawalResult = await Withdrawal.aggregate([
+            { $match: { status: 'paid' } },
+            { $group: { _id: null, total: { $sum: '$amount' } } }
+        ]);
+        const totalWithdrawals = withdrawalResult.length > 0 ? withdrawalResult[0].total : 0;
+
         // Get category distribution
         const categoryStats = await Provider.aggregate([
-            { $match: { isVerified: true } },
             { $group: { _id: '$category', count: { $sum: 1 } } }
         ]);
 
-        const totalVerifiedProviders = totalProviders || 1; // Avoid division by zero
         const categories = categoryStats.map(stat => ({
-            name: stat._id,
-            ratio: stat.count / totalVerifiedProviders
+            name: stat._id || 'Other',
+            ratio: totalProviders > 0 ? stat.count / totalProviders : 0
         }));
 
         res.json({
@@ -821,7 +836,12 @@ app.get('/api/admin/analytics', async (req, res) => {
             totalProviders,
             totalBookings,
             totalRevenue,
-            categories
+            revenue: totalRevenue, // Added for frontend compatibility
+            totalWithdrawals,
+            categories,
+            userGrowth: 12, // Dummy data for frontend
+            providerGrowth: 8,
+            bookingGrowth: 15
         });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -951,9 +971,10 @@ app.post('/api/admin/approve-provider', async (req, res) => {
 
 // Update provider list for customers to only see verified ones
 app.get('/api/providers', async (req, res) => {
-    const { category } = req.query;
+    const { category, admin } = req.query;
     try {
-        const query = { isVerified: true };
+        const query = {};
+        if (admin !== 'true') query.isVerified = true;
         if (category) query.category = category;
         const providers = await Provider.find(query);
 
@@ -1074,6 +1095,31 @@ app.post('/api/providers/:uid/services', async (req, res) => {
 });
 
 // Bookings
+app.get('/api/bookings', async (req, res) => {
+    try {
+        const bookings = await Booking.find().sort({ createdAt: -1 });
+        res.json(bookings);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/admin/bookings/stats', async (req, res) => {
+    try {
+        const stats = await Booking.aggregate([
+            {
+                $group: {
+                    _id: '$status',
+                    count: { $sum: 1 }
+                }
+            }
+        ]);
+        res.json(stats);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.post('/api/call/start', async (req, res) => {
     const { bookingId, customerId, partnerId, callerId } = req.body;
     try {
@@ -1731,7 +1777,7 @@ io.on('connection', (socket) => {
     });
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000;
 const startServer = async () => {
     try {
         await connectDB();
@@ -1778,6 +1824,17 @@ app.delete('/api/admin/offers/:id', async (req, res) => {
 });
 
 // Profile Management
+app.delete('/api/users/:uid', async (req, res) => {
+    try {
+        const { uid } = req.params;
+        await User.findOneAndDelete({ uid });
+        await Provider.findOneAndDelete({ uid });
+        res.json({ message: 'User deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.patch('/api/users/:uid', async (req, res) => {
     try {
         await User.findOneAndUpdate({ uid: req.params.uid }, req.body);
@@ -2005,6 +2062,55 @@ app.post('/api/reports', upload.array('evidence', 5), async (req, res) => {
         res.status(201).json({ message: 'Report submitted successfully' });
     } catch (error) {
         console.error('Report submission error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/admin/commissions', async (req, res) => {
+    try {
+        const bookings = await Booking.find({ status: 'done' });
+        const commissions = {};
+        bookings.forEach(b => {
+            if (!b.providerUid) return;
+            if (!commissions[b.providerUid]) {
+                commissions[b.providerUid] = {
+                    id: b.providerUid,
+                    provider: b.providerName || 'Unknown',
+                    bookings: 0,
+                    totalAmount: 0,
+                    commission: 0,
+                    rate: '15%',
+                    status: 'Paid'
+                };
+            }
+            commissions[b.providerUid].bookings++;
+            commissions[b.providerUid].totalAmount += b.totalAmount;
+            commissions[b.providerUid].commission += Math.round(b.totalAmount * 0.15);
+        });
+        res.json(Object.values(commissions));
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/admin/activity-logs', async (req, res) => {
+    try {
+        const users = await User.find({}, { name: 1, activityLog: 1 }).limit(100);
+        let allLogs = [];
+        users.forEach(user => {
+            if (user.activityLog) {
+                user.activityLog.forEach(log => {
+                    allLogs.push({
+                        ...log.toObject(),
+                        userName: user.name,
+                        userUid: user.uid
+                    });
+                });
+            }
+        });
+        allLogs.sort((a, b) => b.timestamp - a.timestamp);
+        res.json(allLogs.slice(0, 100));
+    } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
