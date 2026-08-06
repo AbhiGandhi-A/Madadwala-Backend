@@ -2251,6 +2251,34 @@ app.delete('/api/admin/reviews/:id', async (req, res) => {
     }
 });
 
+// Admin: Broadcast Notification to all users or specific roles
+app.post('/api/admin/broadcast', async (req, res) => {
+    try {
+        const { role, title, message } = req.body;
+        let query = {};
+        if (role && role !== 'all') query.role = role;
+
+        const users = await User.find(query);
+        const uids = users.map(u => u.uid);
+
+        if (uids.length > 0) {
+            await broadcastFCMNotification(uids, title, message, {
+                type: 'broadcast',
+                screen: 'notifications'
+            });
+
+            // Log for each user (optional, can be heavy if thousands of users)
+            // For now, just log success
+            console.log(`Broadcast: Sent to ${uids.length} users (${role || 'all'})`);
+        }
+
+        res.json({ message: `Broadcast sent to ${uids.length} users` });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 module.exports = app;
+
 
 
