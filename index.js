@@ -320,6 +320,18 @@ const supportSessionSchema = new mongoose.Schema({
 });
 const SupportSession = mongoose.model('SupportSession', supportSessionSchema);
 
+// Report Schema
+const reportSchema = new mongoose.Schema({
+    reporterUid: { type: String, required: true },
+    reportedUid: { type: String, required: true },
+    reason: { type: String, required: true },
+    description: String,
+    evidenceUrls: [String],
+    status: { type: String, enum: ['pending', 'reviewed', 'resolved'], default: 'pending' },
+    createdAt: { type: Date, default: Date.now }
+});
+const Report = mongoose.model('Report', reportSchema);
+
 // FCM Notification Helper
 const sendFCMNotification = async (uid, title, body, data = {}) => {
     try {
@@ -1958,6 +1970,41 @@ app.post('/api/users/bank-details/:uid', async (req, res) => {
         await User.findOneAndUpdate({ uid: req.params.uid }, { bankDetails: req.body });
         res.json({ message: 'Bank details updated' });
     } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Reports
+app.post('/api/reports', upload.array('evidence', 5), async (req, res) => {
+    try {
+        const { reporterUid, reportedUid, reason, description } = req.body;
+        const evidenceUrls = [];
+
+        if (req.files && req.files.length > 0) {
+            for (const file of req.files) {
+                const fileName = `reports/${Date.now()}_${file.originalname}`;
+                await s3.send(new PutObjectCommand({
+                    Bucket: process.env.R2_BUCKET_NAME || process.env.CLOUDFLARE_BUCKET_NAME,
+                    Key: fileName,
+                    Body: file.buffer,
+                    ContentType: file.mimetype,
+                }));
+                evidenceUrls.push(`${process.env.R2_PUBLIC_URL}/${fileName}`);
+            }
+        }
+
+        const newReport = new Report({
+            reporterUid,
+            reportedUid,
+            reason,
+            description,
+            evidenceUrls
+        });
+        await newReport.save();
+
+        res.status(201).json({ message: 'Report submitted successfully' });
+    } catch (error) {
+        console.error('Report submission error:', error);
         res.status(500).json({ error: error.message });
     }
 });
