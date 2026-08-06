@@ -1,5 +1,5 @@
 // API Client for Madadwala Backend
-const API_BASE_URL = 'https://madadwala-backend.vercel.app';
+const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000';
 
 interface ApiResponse<T> {
   success?: boolean;
@@ -73,7 +73,7 @@ export const usersApi = {
 
 // Providers API
 export const providersApi = {
-  getAll: () => apiCall<any[]>('/api/providers?admin=true'),
+  getAll: () => apiCall<any[]>('/api/providers'),
   
   getById: (uid: string) => apiCall<any>(`/api/providers/${uid}`),
   
