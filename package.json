@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodeman index.js"
+    "dev": "nodeman index.js",
+    "build": "npm install --prefix madadwala-Admin-main && npm run build --prefix madadwala-Admin-main"
   },
   "dependencies": {
     "express": "^4.19.2",

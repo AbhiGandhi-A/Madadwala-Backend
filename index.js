@@ -8,6 +8,7 @@ const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const multer = require('multer');
 const admin = require('firebase-admin');
 const Razorpay = require('razorpay');
+const path = require('path');
 
 dotenv.config();
 
@@ -62,6 +63,7 @@ const io = socketIo(server, {
 
 app.use(cors());
 app.use(express.json());
+app.use(express.static(path.join(__dirname, 'madadwala-Admin-main/out')));
 
 // Request Logger Middleware
 app.use((req, res, next) => {
@@ -76,6 +78,10 @@ app.use((req, res, next) => {
 
 // Root Route
 app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'madadwala-Admin-main/out/index.html'));
+});
+
+app.get('/api/health', (req, res) => {
     res.send('Madadwala Backend is running!');
 });
 
@@ -1774,6 +1780,17 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', () => {
         console.log(`[Socket] Client disconnected: ${socket.id}`);
+    });
+});
+
+// Default route for SPA
+app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    res.sendFile(path.join(__dirname, 'madadwala-Admin-main/out/index.html'), (err) => {
+        if (err) {
+            // If index.html doesn't exist yet (not built), show a friendly message
+            res.status(200).send('Madadwala Admin UI is being built or not found. Please check backend build logs.');
+        }
     });
 });
 

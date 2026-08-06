@@ -1,5 +1,5 @@
 // API Client for Madadwala Backend
-const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
 interface ApiResponse<T> {
   success?: boolean;
