@@ -133,6 +133,7 @@ const userSchema = new mongoose.Schema({
     totalEarnings: { type: Number, default: 0 },
     totalJobs: { type: Number, default: 0 },
     isVerified: { type: Boolean, default: false },
+    isBlocked: { type: Boolean, default: false },
     favorites: [{ type: String }], // Array of provider UIDs
     addresses: [{
         label: String, // 'Home', 'Work', etc.
@@ -2112,4 +2113,140 @@ app.get('/api/provider/performance/:uid', async (req, res) => {
     }
 });
 
+// Admin: Get all customers
+app.get('/api/admin/users', async (req, res) => {
+    try {
+        const users = await User.find({ role: 'customer' }).sort({ createdAt: -1 });
+        res.json(users);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Admin: Get all providers
+app.get('/api/admin/providers-all', async (req, res) => {
+    try {
+        const providers = await User.find({ role: 'provider' }).sort({ createdAt: -1 });
+        res.json(providers);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Admin: Get all bookings
+app.get('/api/admin/all-bookings', async (req, res) => {
+    try {
+        const bookings = await Booking.find().sort({ createdAt: -1 });
+        res.json(bookings);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Admin: Toggle block status
+app.patch('/api/admin/users/:uid/toggle-block', async (req, res) => {
+    try {
+        const user = await User.findOne({ uid: req.params.uid });
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        user.isBlocked = !user.isBlocked;
+        await user.save();
+
+        res.json({ message: `User ${user.isBlocked ? 'blocked' : 'unblocked'} successfully`, isBlocked: user.isBlocked });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Admin: Get all reports
+app.get('/api/admin/reports', async (req, res) => {
+    try {
+        const reports = await Report.find().sort({ createdAt: -1 });
+        res.json(reports);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Admin: Send Notification/Warning to specific user
+app.post('/api/admin/send-notification', async (req, res) => {
+    try {
+        const { uid, title, message, type } = req.body;
+
+        await sendFCMNotification(uid, title, message, {
+            type: type || 'admin_notification',
+            screen: 'notifications'
+        });
+
+        // Also log in activity log
+        await logActivity(uid, 'ADMIN_NOTIFICATION', `${title}: ${message}`);
+
+        res.json({ message: 'Notification sent successfully' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Admin: Delete user
+app.delete('/api/admin/users/:uid', async (req, res) => {
+    try {
+        await User.findOneAndDelete({ uid: req.params.uid });
+        await Provider.findOneAndDelete({ uid: req.params.uid });
+        res.json({ message: 'User deleted permanently' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Admin: Update Wallet Balance
+app.post('/api/admin/wallet/adjust', async (req, res) => {
+    try {
+        const { uid, amount, type, description } = req.body;
+        const user = await User.findOne({ uid });
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        if (type === 'credit') {
+            user.walletBalance += Number(amount);
+        } else {
+            user.walletBalance -= Number(amount);
+        }
+        await user.save();
+
+        const transaction = new Transaction({
+            userUid: uid,
+            type,
+            amount: Number(amount),
+            title: 'Admin Adjustment',
+            description: description || 'Balance adjusted by administrator'
+        });
+        await transaction.save();
+
+        res.json({ message: 'Wallet balance adjusted', newBalance: user.walletBalance });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Admin: Get all reviews
+app.get('/api/admin/reviews', async (req, res) => {
+    try {
+        const reviews = await Review.find().sort({ createdAt: -1 });
+        res.json(reviews);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Admin: Delete review
+app.delete('/api/admin/reviews/:id', async (req, res) => {
+    try {
+        await Review.findByIdAndDelete(req.params.id);
+        res.json({ message: 'Review deleted' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 module.exports = app;
+
+
