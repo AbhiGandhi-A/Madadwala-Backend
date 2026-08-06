@@ -1805,7 +1805,19 @@ app.get('/api/users/:uid/favorites', async (req, res) => {
     try {
         const user = await User.findOne({ uid: req.params.uid });
         const providers = await Provider.find({ uid: { $in: user.favorites } });
-        res.json(providers);
+
+        const providersWithDetails = await Promise.all(providers.map(async (p) => {
+            const providerUser = await User.findOne({ uid: p.uid });
+            return {
+                ...p.toObject(),
+                profileImage: providerUser ? providerUser.profileImage : null,
+                totalJobs: providerUser ? providerUser.totalJobs : 0,
+                totalEarnings: providerUser ? providerUser.totalEarnings : 0,
+                createdAt: providerUser ? providerUser.createdAt : null
+            };
+        }));
+
+        res.json(providersWithDetails);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
