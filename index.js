@@ -2117,8 +2117,10 @@ app.get('/api/provider/performance/:uid', async (req, res) => {
 app.get('/api/admin/users', async (req, res) => {
     try {
         const users = await User.find({ role: 'customer' }).sort({ createdAt: -1 });
+        console.log(`Admin API: Found ${users.length} customers`);
         res.json(users);
     } catch (error) {
+        console.error('Admin API Error (users):', error.message);
         res.status(500).json({ error: error.message });
     }
 });
@@ -2127,8 +2129,10 @@ app.get('/api/admin/users', async (req, res) => {
 app.get('/api/admin/providers-all', async (req, res) => {
     try {
         const providers = await User.find({ role: 'provider' }).sort({ createdAt: -1 });
+        console.log(`Admin API: Found ${providers.length} providers`);
         res.json(providers);
     } catch (error) {
+        console.error('Admin API Error (providers):', error.message);
         res.status(500).json({ error: error.message });
     }
 });
