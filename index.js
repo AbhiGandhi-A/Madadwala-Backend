@@ -4,7 +4,6 @@ const socketIo = require('socket.io');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const dotenv = require('dotenv');
-const next = require('next');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const multer = require('multer');
 const admin = require('firebase-admin');
@@ -60,9 +59,6 @@ const io = socketIo(server, {
         methods: ["GET", "POST"]
     }
 });
-const dev = process.env.NODE_ENV !== 'production';
-const nextApp = next({ dev, dir: __dirname });
-const handleNextRequest = nextApp.getRequestHandler();
 
 app.use(cors());
 app.use(express.json());
@@ -80,7 +76,7 @@ app.use((req, res, next) => {
 
 // Root Route
 app.get('/', (req, res) => {
-    return handleNextRequest(req, res);
+    res.send('Madadwala Backend is running!');
 });
 
 // MongoDB Connection
@@ -1738,7 +1734,6 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 3000;
 const startServer = async () => {
     try {
-        await nextApp.prepare();
         await connectDB();
 
         server.listen(PORT, () => {
