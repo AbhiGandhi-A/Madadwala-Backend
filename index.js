@@ -1786,12 +1786,7 @@ io.on('connection', (socket) => {
 // Default route for SPA
 app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api')) return next();
-    res.sendFile(path.join(__dirname, 'madadwala-Admin-main/out/index.html'), (err) => {
-        if (err) {
-            // If index.html doesn't exist yet (not built), show a friendly message
-            res.status(200).send('Madadwala Admin UI is being built or not found. Please check backend build logs.');
-        }
-    });
+    res.sendFile(path.join(__dirname, 'madadwala-Admin-main/out/index.html'));
 });
 
 const PORT = process.env.PORT || 5000;

@@ -1,5 +1,5 @@
 // API Client for Madadwala Backend
-const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
+const API_BASE_URL = 'https://madadwala-backend.vercel.app';
 
 interface ApiResponse<T> {
   success?: boolean;

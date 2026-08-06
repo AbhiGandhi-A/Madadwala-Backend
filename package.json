@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodeman index.js",
-    "build": "npm install --prefix madadwala-Admin-main && npm run build --prefix madadwala-Admin-main"
+    "build": "cd madadwala-Admin-main && npm install --frozen-lockfile && npm run build"
   },
   "dependencies": {
     "express": "^4.19.2",
