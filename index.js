@@ -2278,7 +2278,45 @@ app.post('/api/admin/broadcast', async (req, res) => {
     }
 });
 
+// Admin: Operations Monitor (Live status of all partners)
+app.get('/api/admin/operations-monitor', async (req, res) => {
+    try {
+        const providers = await Provider.find();
+        const activeBookings = await Booking.find({
+            status: { $in: ['accepted', 'on_the_way', 'arrived', 'in_progress'] }
+        });
+
+        const monitorData = await Promise.all(providers.map(async (p) => {
+            const user = await User.findOne({ uid: p.uid });
+            const currentBooking = activeBookings.find(b => b.providerUid === p.uid);
+
+            return {
+                uid: p.uid,
+                name: p.name,
+                profileImage: user?.profileImage,
+                phoneNumber: user?.phoneNumber,
+                isVerified: p.isVerified,
+                status: p.isAvailable ? (currentBooking ? 'busy' : 'online') : 'offline',
+                currentTask: currentBooking ? {
+                    service: currentBooking.serviceName,
+                    status: currentBooking.status,
+                    customer: currentBooking.customerName,
+                    bookingId: currentBooking._id
+                } : null,
+                lat: p.lat,
+                lng: p.lng,
+                lastUpdated: user?.updatedAt || new Date()
+            };
+        }));
+
+        res.json(monitorData);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 module.exports = app;
+
 
 
 
