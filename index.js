@@ -1738,6 +1738,7 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 3000;
 const startServer = async () => {
     try {
+        await nextApp.prepare();
         await connectDB();
 
         server.listen(PORT, () => {
