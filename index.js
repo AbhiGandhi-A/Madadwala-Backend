@@ -335,8 +335,7 @@ const sendFCMNotification = async (uid, title, body, data = {}) => {
             data: { ...data, title, body },
             token: user.fcmToken,
             android: {
-                priority: 'high',
-                ttl: isCall ? 0 : 3600 * 1000, // 0 for calls (now or never), 1 hour for others
+                priority: 'high'
             }
         };
 
@@ -345,8 +344,7 @@ const sendFCMNotification = async (uid, title, body, data = {}) => {
         if (!isCall) {
             message.notification = { title, body };
             message.android.notification = {
-                channel_id: 'madadwala_notifications',
-                priority: 'high'
+                channel_id: 'madadwala_notifications'
             };
         }
 
@@ -947,16 +945,19 @@ app.get('/api/providers', async (req, res) => {
         if (category) query.category = category;
         const providers = await Provider.find(query);
 
-        // Fetch profile image from User collection for each provider
-        const providersWithImages = await Promise.all(providers.map(async (p) => {
+        // Fetch details from User collection for each provider
+        const providersWithDetails = await Promise.all(providers.map(async (p) => {
             const user = await User.findOne({ uid: p.uid });
             return {
                 ...p.toObject(),
-                profileImage: user ? user.profileImage : null
+                profileImage: user ? user.profileImage : null,
+                totalJobs: user ? user.totalJobs : 0,
+                totalEarnings: user ? user.totalEarnings : 0,
+                createdAt: user ? user.createdAt : null
             };
         }));
 
-        res.json(providersWithImages);
+        res.json(providersWithDetails);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -980,12 +981,15 @@ app.get('/api/providers/:uid', async (req, res) => {
         const services = await Service.find({ providerUid: req.params.uid });
         const reviews = await Review.find({ providerUid: req.params.uid });
 
-        const providerWithImage = {
+        const providerDetails = {
             ...provider.toObject(),
-            profileImage: user ? user.profileImage : null
+            profileImage: user ? user.profileImage : null,
+            totalJobs: user ? user.totalJobs : 0,
+            totalEarnings: user ? user.totalEarnings : 0,
+            createdAt: user ? user.createdAt : null
         };
 
-        res.json({ provider: providerWithImage, services, reviews });
+        res.json({ provider: providerDetails, services, reviews });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
