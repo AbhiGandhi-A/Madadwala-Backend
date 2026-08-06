@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { BarChart3, TrendingUp, Download, Filter } from 'lucide-react'
-import { analyticsApi } from '@/lib/api-client'
+
+const API_BASE = ''
 
 export default function AnalyticsPage() {
   const [analytics, setAnalytics] = useState<any>({})
@@ -17,7 +18,8 @@ export default function AnalyticsPage() {
   const fetchAnalytics = async () => {
     try {
       setLoading(true)
-      const data = await analyticsApi.getAll()
+      const response = await fetch(`${API_BASE}/api/admin/analytics`)
+      const data = response.ok ? await response.json() : {}
       setAnalytics(data || {})
     } catch (error) {
       console.error('[v0] Failed to fetch analytics:', error)

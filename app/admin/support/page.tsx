@@ -13,7 +13,8 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
-import { supportApi } from '@/lib/api-client'
+
+const API_BASE = ''
 
 export default function SupportPage() {
   const [tickets, setTickets] = useState<any[]>([])
@@ -31,8 +32,9 @@ export default function SupportPage() {
   const fetchChats = async () => {
     try {
       setLoading(true)
-      const data = await supportApi.getChats()
-      setTickets(data || [])
+      const response = await fetch(`${API_BASE}/api/admin/support/chats`)
+      const data = response.ok ? await response.json() : []
+      setTickets(Array.isArray(data) ? data : [])
     } catch (error) {
       console.error('[v0] Failed to fetch support chats:', error)
     } finally {

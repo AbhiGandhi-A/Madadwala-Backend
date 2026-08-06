@@ -13,7 +13,8 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { providersApi } from '@/lib/api-client'
+
+const API_BASE = ''
 
 interface Provider {
   _id: string
@@ -68,12 +69,14 @@ export default function ProvidersPage() {
   const fetchProviders = async () => {
     try {
       setLoading(true)
-      const [allProviders, pending] = await Promise.all([
-        providersApi.getAll().catch(() => []),
-        providersApi.getPending().catch(() => []),
+      const [allProvidersResponse, pendingResponse] = await Promise.all([
+        fetch(`${API_BASE}/api/providers`),
+        fetch(`${API_BASE}/api/admin/pending-providers`),
       ])
-      setProviders(allProviders || [])
-      setPendingProviders(pending?.map((p: any) => p.uid) || [])
+      const allProviders = allProvidersResponse.ok ? await allProvidersResponse.json() : []
+      const pending = pendingResponse.ok ? await pendingResponse.json() : []
+      setProviders(Array.isArray(allProviders) ? allProviders : [])
+      setPendingProviders(Array.isArray(pending) ? pending.map((p: any) => p.uid) : [])
     } catch (error) {
       console.error('[v0] Failed to fetch providers:', error)
     } finally {
@@ -104,7 +107,11 @@ export default function ProvidersPage() {
   const confirmApprove = async () => {
     if (selectedProvider) {
       try {
-        await providersApi.approve(selectedProvider.uid, { isVerified: true })
+        await fetch(`${API_BASE}/api/admin/approve-provider`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uid: selectedProvider.uid }),
+        })
         await fetchProviders()
         setApproveConfirmOpen(false)
       } catch (error) {
@@ -116,7 +123,7 @@ export default function ProvidersPage() {
   const confirmDelete = async () => {
     if (selectedProvider) {
       try {
-        await providersApi.delete(selectedProvider.uid)
+        await fetch(`${API_BASE}/api/providers/${selectedProvider.uid}`, { method: 'DELETE' })
         await fetchProviders()
         setDeleteConfirmOpen(false)
       } catch (error) {

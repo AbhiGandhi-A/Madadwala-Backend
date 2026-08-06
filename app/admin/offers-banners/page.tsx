@@ -15,7 +15,8 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { offersApi, bannersApi } from '@/lib/api-client'
+
+const API_BASE = ''
 
 interface Offer {
   _id: string
@@ -75,12 +76,14 @@ export default function OffersAndBannersPage() {
 
   const fetchOffersAndBanners = async () => {
     try {
-      const [offersData, bannersData] = await Promise.all([
-        offersApi.getAll().catch(() => []),
-        bannersApi.getAll().catch(() => []),
+      const [offersResponse, bannersResponse] = await Promise.all([
+        fetch(`${API_BASE}/api/offers`),
+        fetch(`${API_BASE}/api/banners`),
       ])
-      setOffers(offersData || [])
-      setBanners(bannersData || [])
+      const offersData = offersResponse.ok ? await offersResponse.json() : []
+      const bannersData = bannersResponse.ok ? await bannersResponse.json() : []
+      setOffers(Array.isArray(offersData) ? offersData : [])
+      setBanners(Array.isArray(bannersData) ? bannersData : [])
     } catch (error) {
       console.error('[v0] Failed to fetch offers and banners:', error)
     }
@@ -106,7 +109,11 @@ export default function OffersAndBannersPage() {
   const confirmAddOffer = async () => {
     if (offerFormData.title && offerFormData.code) {
       try {
-        await offersApi.create(offerFormData)
+        await fetch(`${API_BASE}/api/admin/offers`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(offerFormData),
+        })
         await fetchOffersAndBanners()
         setAddOfferModalOpen(false)
       } catch (error) {
@@ -118,7 +125,11 @@ export default function OffersAndBannersPage() {
   const confirmEditOffer = async () => {
     if (selectedOffer && offerFormData.title) {
       try {
-        await offersApi.update(selectedOffer._id, offerFormData)
+        await fetch(`${API_BASE}/api/admin/offers/${selectedOffer._id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(offerFormData),
+        })
         await fetchOffersAndBanners()
         setEditOfferModalOpen(false)
       } catch (error) {
@@ -130,7 +141,7 @@ export default function OffersAndBannersPage() {
   const confirmDeleteOffer = async () => {
     if (selectedOffer) {
       try {
-        await offersApi.delete(selectedOffer._id)
+        await fetch(`${API_BASE}/api/admin/offers/${selectedOffer._id}`, { method: 'DELETE' })
         await fetchOffersAndBanners()
         setDeleteOfferConfirmOpen(false)
       } catch (error) {
@@ -163,7 +174,10 @@ export default function OffersAndBannersPage() {
         formData.append('title', bannerFormData.title)
         formData.append('subtitle', bannerFormData.subtitle)
         formData.append('isActive', String(bannerFormData.isActive))
-        await bannersApi.create(formData)
+        await fetch(`${API_BASE}/api/admin/banners`, {
+          method: 'POST',
+          body: formData,
+        })
         await fetchOffersAndBanners()
         setAddBannerModalOpen(false)
       } catch (error) {
@@ -179,7 +193,10 @@ export default function OffersAndBannersPage() {
         formData.append('title', bannerFormData.title)
         formData.append('subtitle', bannerFormData.subtitle)
         formData.append('isActive', String(bannerFormData.isActive))
-        await bannersApi.update(selectedBanner._id, formData)
+        await fetch(`${API_BASE}/api/admin/banners/${selectedBanner._id}`, {
+          method: 'PUT',
+          body: formData,
+        })
         await fetchOffersAndBanners()
         setEditBannerModalOpen(false)
       } catch (error) {
@@ -191,7 +208,7 @@ export default function OffersAndBannersPage() {
   const confirmDeleteBanner = async () => {
     if (selectedBanner) {
       try {
-        await bannersApi.delete(selectedBanner._id)
+        await fetch(`${API_BASE}/api/admin/banners/${selectedBanner._id}`, { method: 'DELETE' })
         await fetchOffersAndBanners()
         setDeleteBannerConfirmOpen(false)
       } catch (error) {

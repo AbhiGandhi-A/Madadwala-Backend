@@ -13,7 +13,8 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
-import { offersApi } from '@/lib/api-client'
+
+const API_BASE = ''
 
 export default function CouponsPage() {
   const [coupons, setCoupons] = useState<any[]>([])
@@ -28,8 +29,9 @@ export default function CouponsPage() {
   const fetchCoupons = async () => {
     try {
       setLoading(true)
-      const data = await offersApi.getAll().catch(() => [])
-      setCoupons(data || [])
+      const response = await fetch(`${API_BASE}/api/offers`)
+      const data = response.ok ? await response.json() : []
+      setCoupons(Array.isArray(data) ? data : [])
     } catch (error) {
       console.error('[v0] Failed to fetch coupons:', error)
     } finally {

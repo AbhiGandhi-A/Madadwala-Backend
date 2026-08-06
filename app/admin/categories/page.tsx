@@ -13,7 +13,8 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { categoriesApi } from '@/lib/api-client'
+
+const API_BASE = ''
 
 interface Category {
   _id: string
@@ -45,8 +46,9 @@ export default function CategoriesPage() {
 
   const fetchCategories = async () => {
     try {
-      const data = await categoriesApi.getAll()
-      setCategories(data || [])
+      const response = await fetch(`${API_BASE}/api/categories`)
+      const data = response.ok ? await response.json() : []
+      setCategories(Array.isArray(data) ? data : [])
     } catch (error) {
       console.error('[v0] Failed to fetch categories:', error)
     }
@@ -71,7 +73,11 @@ export default function CategoriesPage() {
   const confirmAdd = async () => {
     if (formData.name.trim()) {
       try {
-        await categoriesApi.create(formData)
+        await fetch(`${API_BASE}/api/admin/categories`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData),
+        })
         await fetchCategories()
         setAddModalOpen(false)
         setFormData({ name: '', icon: '', image: '' })
@@ -84,7 +90,11 @@ export default function CategoriesPage() {
   const confirmEdit = async () => {
     if (selectedCategory && formData.name.trim()) {
       try {
-        await categoriesApi.update(selectedCategory._id, formData)
+        await fetch(`${API_BASE}/api/admin/categories/${selectedCategory._id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData),
+        })
         await fetchCategories()
         setEditModalOpen(false)
         setFormData({ name: '', icon: '', image: '' })
@@ -97,7 +107,7 @@ export default function CategoriesPage() {
   const confirmDelete = async () => {
     if (selectedCategory) {
       try {
-        await categoriesApi.delete(selectedCategory._id)
+        await fetch(`${API_BASE}/api/admin/categories/${selectedCategory._id}`, { method: 'DELETE' })
         await fetchCategories()
         setDeleteConfirmOpen(false)
         setSelectedCategory(null)

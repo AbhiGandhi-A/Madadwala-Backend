@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Users, Briefcase, Calendar, CreditCard, TrendingUp, ArrowUp, ArrowDown } from 'lucide-react'
-import { analyticsApi, jobsApi, providersApi } from '@/lib/api-client'
+import { Users, Briefcase, Calendar, CreditCard, ArrowUp, ArrowDown } from 'lucide-react'
+
+const API_BASE = ''
 
 interface DashboardStats {
   totalUsers: number
@@ -40,18 +41,24 @@ export default function AdminDashboard() {
       try {
         setLoading(true)
         setError(null)
-        
-        const [analyticsData, activeJobs, pendingProviders] = await Promise.all([
-          analyticsApi.getAll().catch(() => ({})),
-          jobsApi.getActive().catch(() => []),
-          providersApi.getPending().catch(() => []),
+
+        const [analyticsResponse, activeJobsResponse, pendingProvidersResponse] = await Promise.all([
+          fetch(`${API_BASE}/api/admin/analytics`),
+          fetch(`${API_BASE}/api/admin/active-jobs`),
+          fetch(`${API_BASE}/api/admin/pending-providers`),
         ])
+
+        const analyticsData = analyticsResponse.ok ? await analyticsResponse.json() : {}
+        const activeJobs = activeJobsResponse.ok ? await activeJobsResponse.json() : []
+        const pendingProviders = pendingProvidersResponse.ok ? await pendingProvidersResponse.json() : []
 
         setStats((prev) => ({
           ...prev,
           ...analyticsData,
-          activeBookings: activeJobs.length || 0,
-          pendingApprovals: pendingProviders.length || 0,
+          totalRevenue: analyticsData.totalRevenue || analyticsData.revenue || prev.revenue || 0,
+          revenue: analyticsData.totalRevenue || analyticsData.revenue || prev.revenue || 0,
+          activeBookings: Array.isArray(activeJobs) ? activeJobs.length : 0,
+          pendingApprovals: Array.isArray(pendingProviders) ? pendingProviders.length : 0,
         }))
       } catch (err) {
         console.error('[v0] Failed to fetch stats:', err)

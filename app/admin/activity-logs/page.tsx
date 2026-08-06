@@ -12,7 +12,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { analyticsApi } from '@/lib/api-client'
+
+const BACKEND_URL = ''
 
 export default function ActivityLogsPage() {
   const [logs, setLogs] = useState<any[]>([])
@@ -28,21 +29,36 @@ export default function ActivityLogsPage() {
   const fetchLogs = async () => {
     try {
       setLoading(true)
-      const data = await analyticsApi.getActivityLogs().catch(() => [])
-      setLogs(data || [])
+      const response = await fetch(`/api/admin/activity-logs`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to load activity logs')
+      }
+
+      const data = await response.json()
+      setLogs(Array.isArray(data) ? data : [])
     } catch (error) {
       console.error('[v0] Failed to fetch activity logs:', error)
+      setLogs([])
     } finally {
       setLoading(false)
     }
   }
 
-  const filteredLogs = logs.filter(
-    (log) =>
-      log.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      log.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      log.user.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  const filteredLogs = logs.filter((log) => {
+    const action = String(log?.action || '').toLowerCase()
+    const description = String(log?.description || '').toLowerCase()
+    const user = String(log?.user || '').toLowerCase()
+
+    return action.includes(searchTerm.toLowerCase()) ||
+      description.includes(searchTerm.toLowerCase()) ||
+      user.includes(searchTerm.toLowerCase())
+  })
 
   const handleViewLog = (log: any) => {
     setSelectedLog(log)

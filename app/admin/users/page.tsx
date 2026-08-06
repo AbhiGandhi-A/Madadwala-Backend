@@ -13,7 +13,8 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { usersApi } from '@/lib/api-client'
+
+const API_BASE = ''
 
 interface User {
   _id: string
@@ -60,8 +61,9 @@ export default function UsersPage() {
     try {
       setLoading(true)
       setError(null)
-      const data = await usersApi.getAll()
-      setUsers(data || [])
+      const response = await fetch(`${API_BASE}/api/users`)
+      const data = response.ok ? await response.json() : []
+      setUsers(Array.isArray(data) ? data : [])
     } catch (err) {
       console.error('Failed to fetch users:', err)
       setError('Failed to load users. Please check your connection and backend URL.')
@@ -94,7 +96,7 @@ export default function UsersPage() {
   const confirmDelete = async () => {
     if (userToDelete) {
       try {
-        await usersApi.delete(userToDelete)
+        await fetch(`${API_BASE}/api/users/${userToDelete}`, { method: 'DELETE' })
         setUsers(users.filter((u) => u.uid !== userToDelete))
         setDeleteConfirmOpen(false)
         setUserToDelete(null)
@@ -108,7 +110,11 @@ export default function UsersPage() {
   const confirmBlock = async () => {
     if (userToBlock) {
       try {
-        await usersApi.block(userToBlock)
+        await fetch(`${API_BASE}/api/users/${userToBlock}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ isBlocked: true }),
+        })
         const newBlockedUsers = new Set(blockedUsers)
         newBlockedUsers.add(userToBlock)
         setBlockedUsers(newBlockedUsers)

@@ -14,7 +14,8 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { withdrawalsApi } from '@/lib/api-client'
+
+const API_BASE = ''
 
 interface Withdrawal {
   _id: string
@@ -71,8 +72,9 @@ export default function WithdrawalsPage() {
   const fetchWithdrawals = async () => {
     try {
       setLoading(true)
-      const data = await withdrawalsApi.getPending()
-      setWithdrawals(data || [])
+      const response = await fetch(`${API_BASE}/api/admin/withdrawals/pending`)
+      const data = response.ok ? await response.json() : []
+      setWithdrawals(Array.isArray(data) ? data : [])
     } catch (error) {
       console.error('[v0] Failed to fetch withdrawals:', error)
     } finally {
@@ -98,7 +100,11 @@ export default function WithdrawalsPage() {
   const confirmApprove = async () => {
     if (selectedWithdrawal) {
       try {
-        await withdrawalsApi.approve(selectedWithdrawal._id, {})
+        await fetch(`${API_BASE}/api/admin/withdrawals/${selectedWithdrawal._id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'approved' }),
+        })
         await fetchWithdrawals()
         setApproveModalOpen(false)
       } catch (error) {
@@ -110,7 +116,11 @@ export default function WithdrawalsPage() {
   const confirmReject = async () => {
     if (selectedWithdrawal && rejectionReason) {
       try {
-        await withdrawalsApi.reject(selectedWithdrawal._id, rejectionReason)
+        await fetch(`${API_BASE}/api/admin/withdrawals/${selectedWithdrawal._id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'rejected', rejectionReason }),
+        })
         await fetchWithdrawals()
         setRejectModalOpen(false)
         setRejectionReason('')

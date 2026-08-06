@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Settings, Bell, Lock, Users, CreditCard, Globe } from 'lucide-react'
-import { settingsApi } from '@/lib/api-client'
+const API_BASE = ''
 
 export default function SettingsPage() {
   const [generalSettings, setGeneralSettings] = useState<any>({})
@@ -23,12 +23,16 @@ export default function SettingsPage() {
   const fetchSettings = async () => {
     try {
       setLoading(true)
-      const [general, notifications, security, platform] = await Promise.all([
-        settingsApi.getGeneral().catch(() => ({})),
-        settingsApi.getNotifications().catch(() => ({})),
-        settingsApi.getSecurity().catch(() => ({})),
-        settingsApi.getPlatform().catch(() => ({})),
+      const [generalResponse, notificationsResponse, securityResponse, platformResponse] = await Promise.all([
+        fetch(`${API_BASE}/api/admin/settings/general`),
+        fetch(`${API_BASE}/api/admin/settings/notifications`),
+        fetch(`${API_BASE}/api/admin/settings/security`),
+        fetch(`${API_BASE}/api/admin/settings/platform`),
       ])
+      const general = generalResponse.ok ? await generalResponse.json() : {}
+      const notifications = notificationsResponse.ok ? await notificationsResponse.json() : {}
+      const security = securityResponse.ok ? await securityResponse.json() : {}
+      const platform = platformResponse.ok ? await platformResponse.json() : {}
       setGeneralSettings(general)
       setNotificationSettings(notifications)
       setSecuritySettings(security)
@@ -43,10 +47,10 @@ export default function SettingsPage() {
   const handleSaveSettings = async () => {
     try {
       await Promise.all([
-        settingsApi.updateGeneral(generalSettings),
-        settingsApi.updateNotifications(notificationSettings),
-        settingsApi.updateSecurity(securitySettings),
-        settingsApi.updatePlatform(platformSettings),
+        fetch(`${API_BASE}/api/admin/settings/general`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(generalSettings) }),
+        fetch(`${API_BASE}/api/admin/settings/notifications`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(notificationSettings) }),
+        fetch(`${API_BASE}/api/admin/settings/security`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(securitySettings) }),
+        fetch(`${API_BASE}/api/admin/settings/platform`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(platformSettings) }),
       ])
       console.log('[v0] Settings saved')
     } catch (error) {

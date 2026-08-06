@@ -13,7 +13,8 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { bookingsApi } from '@/lib/api-client'
+
+const API_BASE = ''
 
 interface Booking {
   _id: string
@@ -73,11 +74,13 @@ export default function BookingsPage() {
   const fetchBookings = async () => {
     try {
       setLoading(true)
-      const [data, statsData] = await Promise.all([
-        bookingsApi.getAll().catch(() => []),
-        bookingsApi.getStats().catch(() => ({})),
+      const [bookingsResponse, statsResponse] = await Promise.all([
+        fetch(`${API_BASE}/api/bookings`),
+        fetch(`${API_BASE}/api/admin/bookings/stats`),
       ])
-      setBookings(data || [])
+      const bookingsData = bookingsResponse.ok ? await bookingsResponse.json() : []
+      const statsData = statsResponse.ok ? await statsResponse.json() : {}
+      setBookings(Array.isArray(bookingsData) ? bookingsData : [])
       setStats(statsData || {})
     } catch (error) {
       console.error('[v0] Failed to fetch bookings:', error)

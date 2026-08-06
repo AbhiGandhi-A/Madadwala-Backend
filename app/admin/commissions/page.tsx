@@ -5,7 +5,8 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Search, Download, Filter, Edit } from 'lucide-react'
 import { Input } from '@/components/ui/input'
-import { analyticsApi } from '@/lib/api-client'
+
+const API_BASE = ''
 
 export default function CommissionsPage() {
   const [commissions, setCommissions] = useState<any[]>([])
@@ -19,8 +20,9 @@ export default function CommissionsPage() {
   const fetchCommissions = async () => {
     try {
       setLoading(true)
-      const data = await analyticsApi.getCommissions().catch(() => [])
-      setCommissions(data || [])
+      const response = await fetch(`${API_BASE}/api/admin/commissions`)
+      const data = response.ok ? await response.json() : []
+      setCommissions(Array.isArray(data) ? data : [])
     } catch (error) {
       console.error('[v0] Failed to fetch commissions:', error)
     } finally {
