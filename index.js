@@ -174,6 +174,8 @@ const userSchema = new mongoose.Schema({
     profession: String,
     aadhaarNumber: String,
     verificationDate: String,
+    kycRejected: { type: Boolean, default: false },
+    kycRejectionReason: String,
     selfieImage: String,
     bankDetails: {
         accountNumber: String,
@@ -285,6 +287,7 @@ const bookingSchema = new mongoose.Schema({
     providerLat: Number,
     providerLng: Number,
     partnerComment: String,
+    issueImages: [String],
     createdAt: { type: Date, default: Date.now }
 });
 const Booking = mongoose.model('Booking', bookingSchema);
@@ -1031,6 +1034,63 @@ app.get('/api/admin/pending-providers', async (req, res) => {
     }
 });
 
+// Admin: Reject provider
+app.post('/api/admin/reject-provider', async (req, res) => {
+    const { uid, reason } = req.body;
+    try {
+        await User.findOneAndUpdate({ uid }, {
+            isVerified: false,
+            kycRejected: true,
+            kycRejectionReason: reason
+        });
+        await Provider.findOneAndUpdate({ uid }, { isVerified: false });
+
+        // Notify Provider
+        sendFCMNotification(
+            uid,
+            'KYC Registration Rejected',
+            `Your application was not approved. Reason: ${reason}. Please update your details.`,
+            { screen: 'profile' }
+        );
+
+        res.json({ message: 'Provider application rejected' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// KYC Update (Re-upload)
+app.patch('/api/users/:uid/kyc', upload.single('aadhaarImage'), async (req, res) => {
+    try {
+        const { uid } = req.params;
+        const { aadhaarNumber } = req.body;
+        const updateData = { kycRejected: false }; // Reset rejection status on re-submit
+
+        if (aadhaarNumber) updateData.aadhaarNumber = aadhaarNumber;
+
+        if (req.file) {
+            const fileName = `aadhaar/${uid}_${Date.now()}.jpg`;
+            await s3.send(new PutObjectCommand({
+                Bucket: process.env.R2_BUCKET_NAME || process.env.CLOUDFLARE_BUCKET_NAME,
+                Key: fileName,
+                Body: req.file.buffer,
+                ContentType: req.file.mimetype,
+            }));
+            updateData.aadhaarImage = `${process.env.R2_PUBLIC_URL}/${fileName}`;
+        }
+
+        const user = await User.findOne({ uid });
+        if (user.isVerified) {
+            return res.status(400).json({ error: 'Account already verified' });
+        }
+
+        await User.findOneAndUpdate({ uid }, updateData);
+        res.json({ message: 'KYC details updated successfully. Under review.' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Admin: Approve provider
 app.post('/api/admin/approve-provider', async (req, res) => {
     const { uid } = req.body;
@@ -1242,27 +1302,62 @@ app.post('/api/call/start', async (req, res) => {
     }
 });
 
-app.post('/api/bookings', async (req, res) => {
-    console.log('Creating new booking:', JSON.stringify(req.body));
+app.post('/api/bookings', upload.array('issueImages', 5), async (req, res) => {
+    console.log('Creating new booking (Multipart):', req.body);
     try {
+        const { customerUid, customerName, providerUid, providerName, serviceName, address, scheduledTime, totalAmount, customerLat, customerLng } = req.body;
+
+        const issueImagesUrls = [];
+        if (req.files && req.files.length > 0) {
+            for (const file of req.files) {
+                const fileName = `bookings/${customerUid}_${Date.now()}_${file.originalname}`;
+                await s3.send(new PutObjectCommand({
+                    Bucket: process.env.R2_BUCKET_NAME || process.env.CLOUDFLARE_BUCKET_NAME,
+                    Key: fileName,
+                    Body: file.buffer,
+                    ContentType: file.mimetype,
+                }));
+                issueImagesUrls.push(`${process.env.R2_PUBLIC_URL}/${fileName}`);
+            }
+        }
+
         const otp = Math.floor(1000 + Math.random() * 9000).toString();
-        const newBooking = new Booking({ ...req.body, otp });
+        const newBooking = new Booking({
+            customerUid,
+            customerName,
+            providerUid,
+            providerName,
+            serviceName,
+            address,
+            scheduledTime,
+            totalAmount: Number(totalAmount),
+            customerLat: customerLat ? Number(customerLat) : null,
+            customerLng: customerLng ? Number(customerLng) : null,
+            issueImages: issueImagesUrls,
+            otp
+        });
+
         await newBooking.save();
         console.log(`Booking created successfully with ID: ${newBooking._id}`);
 
         // Log Activity
-        logActivity(newBooking.customerUid, 'BOOKING_CREATED', `Booked ${newBooking.serviceName} for ₹${newBooking.totalAmount}`);
-        logActivity(newBooking.providerUid, 'NEW_JOB_RECEIVED', `Received a new booking for ${newBooking.serviceName}`);
+        logActivity(customerUid, 'BOOKING_CREATED', `Booked ${serviceName} for ₹${totalAmount}`);
+        logActivity(providerUid, 'NEW_JOB_RECEIVED', `Received a new booking for ${serviceName}`);
 
         // Notify Provider
         sendFCMNotification(
-            newBooking.providerUid,
+            providerUid,
             'New Booking Received!',
-            `You have a new booking from ${newBooking.customerName} for ${newBooking.serviceName}.`,
+            `You have a new booking from ${customerName} for ${serviceName}.`,
             { bookingId: newBooking._id.toString(), screen: 'active_job' }
         );
 
         res.status(201).json(newBooking);
+    } catch (error) {
+        console.error('Booking creation error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
