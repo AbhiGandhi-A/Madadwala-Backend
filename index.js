@@ -1577,6 +1577,7 @@ app.post('/api/custom-requests/:id/direct-accept', async (req, res) => {
 
 app.post('/api/bookings/:id/complete-payment', async (req, res) => {
     const bookingId = req.params.id;
+    const { amount } = req.body;
     console.log(`Starting complete-payment for booking: ${bookingId}`);
 
     try {
@@ -1591,13 +1592,16 @@ app.post('/api/bookings/:id/complete-payment', async (req, res) => {
             return res.json({ message: 'Payment already completed' });
         }
 
+        const finalAmount = amount ? Number(amount) : booking.totalAmount;
+
         // 2. Update booking status
         booking.paymentStatus = 'paid';
         booking.status = 'done';
+        if (amount) booking.totalAmount = finalAmount;
         await booking.save();
         console.log(`Booking ${bookingId} marked as paid/done`);
 
-        logActivity(booking.customerUid, 'PAYMENT_COMPLETED', `Paid ₹${booking.totalAmount} for ${booking.serviceName}`);
+        logActivity(booking.customerUid, 'PAYMENT_COMPLETED', `Paid ₹${finalAmount} for ${booking.serviceName}`);
 
         // 3. Credit the provider's wallet
         const providerUid = booking.providerUid;
@@ -1611,8 +1615,8 @@ app.post('/api/bookings/:id/complete-payment', async (req, res) => {
                 console.error("Error fetching commission setting:", e);
             }
 
-            const partnerEarnings = Math.round(booking.totalAmount * ((100 - commissionPercent) / 100));
-            const companyCommission = booking.totalAmount - partnerEarnings;
+            const partnerEarnings = Math.round(finalAmount * ((100 - commissionPercent) / 100));
+            const companyCommission = finalAmount - partnerEarnings;
 
             const providerUpdate = User.findOneAndUpdate(
                 { uid: providerUid },
@@ -1641,7 +1645,7 @@ app.post('/api/bookings/:id/complete-payment', async (req, res) => {
 
 app.post('/api/bookings/:id/pay-from-wallet', async (req, res) => {
     const bookingId = req.params.id;
-    const { customerUid } = req.body;
+    const { customerUid, amount } = req.body;
 
     try {
         const booking = await Booking.findById(bookingId);
@@ -1651,18 +1655,20 @@ app.post('/api/bookings/:id/pay-from-wallet', async (req, res) => {
         const customer = await User.findOne({ uid: customerUid });
         if (!customer) return res.status(404).json({ error: 'Customer not found' });
 
-        if (customer.walletBalance < booking.totalAmount) {
+        const finalAmount = amount ? Number(amount) : booking.totalAmount;
+
+        if (customer.walletBalance < finalAmount) {
             return res.status(400).json({ error: 'Insufficient wallet balance' });
         }
 
         // 1. Deduct from customer
-        customer.walletBalance -= booking.totalAmount;
+        customer.walletBalance -= finalAmount;
         await customer.save();
 
         await new Transaction({
             userUid: customerUid,
             type: 'debit',
-            amount: booking.totalAmount,
+            amount: finalAmount,
             title: 'Booking Payment',
             description: `Payment for ${booking.serviceName}`
         }).save();
@@ -1670,6 +1676,8 @@ app.post('/api/bookings/:id/pay-from-wallet', async (req, res) => {
         // 2. Update booking
         booking.paymentStatus = 'paid';
         booking.status = 'done';
+        // Update booking amount if it was discounted
+        if (amount) booking.totalAmount = finalAmount;
         await booking.save();
 
         // 3. Credit provider
@@ -1679,8 +1687,8 @@ app.post('/api/bookings/:id/pay-from-wallet', async (req, res) => {
             const setting = await Settings.findOne({ key: 'commission_percentage' });
             if (setting) commissionPercent = Number(setting.value);
 
-            const partnerEarnings = Math.round(booking.totalAmount * ((100 - commissionPercent) / 100));
-            const companyCommission = booking.totalAmount - partnerEarnings;
+            const partnerEarnings = Math.round(finalAmount * ((100 - commissionPercent) / 100));
+            const companyCommission = finalAmount - partnerEarnings;
 
             await User.findOneAndUpdate(
                 { uid: providerUid },
@@ -1696,7 +1704,7 @@ app.post('/api/bookings/:id/pay-from-wallet', async (req, res) => {
             }).save();
         }
 
-        logActivity(customerUid, 'PAYMENT_WALLET', `Paid ₹${booking.totalAmount} using wallet for ${booking.serviceName}`);
+        logActivity(customerUid, 'PAYMENT_WALLET', `Paid ₹${finalAmount} using wallet for ${booking.serviceName}`);
         res.json({ message: 'Payment successful using wallet' });
     } catch (error) {
         console.error('Wallet Payment Error:', error.message);
@@ -1914,11 +1922,41 @@ const startServer = async () => {
 
 startServer();
 
-// Admin: Offers
+// Offers & Coupons
 app.get('/api/offers', async (req, res) => {
     try {
         const offers = await Offer.find().sort({ createdAt: -1 });
         res.json(offers);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/offers/validate', async (req, res) => {
+    try {
+        const { code, amount } = req.body;
+        const offer = await Offer.findOne({ code: { $regex: new RegExp(`^${code}$`, 'i') } });
+
+        if (!offer) {
+            return res.status(404).json({ valid: false, message: 'Invalid coupon code' });
+        }
+
+        const now = new Date();
+        if (offer.expiryDate && now > new Date(offer.expiryDate)) {
+            return res.status(400).json({ valid: false, message: 'Coupon has expired' });
+        }
+
+        // Calculate discount
+        const discountAmount = Math.round((amount * offer.discount) / 100);
+        const finalAmount = amount - discountAmount;
+
+        res.json({
+            valid: true,
+            discount: offer.discount,
+            discountAmount,
+            finalAmount,
+            message: `Coupon applied: ${offer.discount}% off`
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
