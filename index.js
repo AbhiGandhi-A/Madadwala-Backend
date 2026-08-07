@@ -118,7 +118,7 @@ app.get('/', (req, res) => {
 
                 <div class="contact">
                     Support Contact: 9879338393<br>
-                    Email: support@madadwala.com
+                    Email: madadwalasupport@gmail.com
                 </div>
 
                 <div class="footer">
