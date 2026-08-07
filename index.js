@@ -765,6 +765,15 @@ app.post('/api/withdrawals/request', async (req, res) => {
     }
 });
 
+app.get('/api/withdrawals/history/:uid', async (req, res) => {
+    try {
+        const withdrawals = await Withdrawal.find({ providerUid: req.params.uid }).sort({ createdAt: -1 });
+        res.json(withdrawals);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.get('/api/admin/withdrawals/pending', async (req, res) => {
     try {
         const withdrawals = await Withdrawal.find({ status: 'pending' }).sort({ createdAt: -1 });
