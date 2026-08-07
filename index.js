@@ -1269,6 +1269,95 @@ app.get('/api/bookings/provider/:uid', async (req, res) => {
     }
 });
 
+app.patch('/api/bookings/:id/cancel', async (req, res) => {
+    try {
+        const { reason, cancelledBy } = req.body;
+        const booking = await Booking.findById(req.params.id);
+
+        if (!booking) return res.status(404).json({ error: 'Booking not found' });
+        if (['done', 'cancelled'].includes(booking.status)) {
+            return res.status(400).json({ error: 'Booking already completed or cancelled' });
+        }
+
+        const oldStatus = booking.status;
+        booking.status = 'cancelled';
+        booking.partnerComment = reason || `Cancelled by ${cancelledBy || 'user'}`;
+
+        // Handle Refund if Paid
+        let refundProcessed = false;
+        if (booking.paymentStatus === 'paid') {
+            const user = await User.findOne({ uid: booking.customerUid });
+            if (user) {
+                user.walletBalance += booking.totalAmount;
+                await user.save();
+
+                await new Transaction({
+                    userUid: booking.customerUid,
+                    type: 'credit',
+                    amount: booking.totalAmount,
+                    title: 'Booking Refund',
+                    description: `Refund for cancelled booking: ${booking.serviceName}`
+                }).save();
+
+                booking.paymentStatus = 'pending'; // Reset or mark as refunded
+                refundProcessed = true;
+                logActivity(booking.customerUid, 'REFUND_RECEIVED', `Received refund of ₹${booking.totalAmount} for cancelled job`);
+            }
+        }
+
+        await booking.save();
+
+        // Notify other party
+        const notifyUid = (cancelledBy === 'provider' || booking.providerUid === cancelledBy)
+            ? booking.customerUid
+            : booking.providerUid;
+
+        const partyName = (cancelledBy === 'provider') ? 'Partner' : 'Customer';
+
+        sendFCMNotification(
+            notifyUid,
+            'Booking Cancelled',
+            `The booking for ${booking.serviceName} has been cancelled by the ${partyName}.`,
+            { bookingId: booking._id.toString(), screen: 'bookings' }
+        );
+
+        res.json({
+            success: true,
+            message: refundProcessed ? 'Booking cancelled and refund processed to wallet' : 'Booking cancelled successfully'
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.patch('/api/bookings/:id/reschedule', async (req, res) => {
+    try {
+        const { scheduledTime } = req.body;
+        const booking = await Booking.findById(req.params.id);
+
+        if (!booking) return res.status(404).json({ error: 'Booking not found' });
+        if (['done', 'cancelled'].includes(booking.status)) {
+            return res.status(400).json({ error: 'Cannot reschedule completed or cancelled booking' });
+        }
+
+        const oldTime = booking.scheduledTime;
+        booking.scheduledTime = scheduledTime;
+        await booking.save();
+
+        // Notify Provider
+        sendFCMNotification(
+            booking.providerUid,
+            'Booking Rescheduled',
+            `The booking for ${booking.serviceName} has been moved from ${oldTime} to ${scheduledTime}.`,
+            { bookingId: booking._id.toString(), screen: 'active_job' }
+        );
+
+        res.json({ success: true, message: 'Booking rescheduled successfully' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.get('/api/bookings/:id', async (req, res) => {
     try {
         const booking = await Booking.findById(req.params.id);
