@@ -76,7 +76,58 @@ app.use((req, res, next) => {
 
 // Root Route
 app.get('/', (req, res) => {
-    res.send('Madadwala Backend is running!');
+    res.send(`
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Madadwala - Home Services Marketplace</title>
+            <style>
+                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; background-color: #f9f9f9; }
+                .container { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+                h1 { color: #1E5631; margin-bottom: 10px; }
+                .mission { font-style: italic; color: #666; margin-bottom: 30px; border-left: 4px solid #1E5631; padding-left: 15px; }
+                h2 { color: #1E5631; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-top: 30px; }
+                .price-list { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-top: 20px; }
+                .price-item { padding: 10px; border-bottom: 1px solid #eee; }
+                .price-val { font-weight: bold; color: #1E5631; padding: 10px; border-bottom: 1px solid #eee; text-align: right; }
+                .footer { margin-top: 40px; font-size: 0.9em; color: #888; text-align: center; }
+                .contact { background: #E8F5E9; padding: 15px; border-radius: 8px; margin-top: 20px; font-weight: bold; color: #1E5631; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>Madadwala</h1>
+                <p class="mission">"Empowering homes through verified professional care and reliable local service."</p>
+
+                <p>Madadwala is a hyperlocal service marketplace connecting households with verified service professionals. We ensure quality, transparency, and safety for all home maintenance needs.</p>
+
+                <h2>Our Service Catalog & Pricing</h2>
+                <div class="price-list">
+                    <div class="price-item">Electrical - Fan Repair / Fitting</div><div class="price-val">₹150 - ₹500</div>
+                    <div class="price-item">Electrical - House Wiring (per pt)</div><div class="price-val">₹200 - ₹1500</div>
+                    <div class="price-item">Plumbing - Tap/Leakage Repair</div><div class="price-val">₹100 - ₹800</div>
+                    <div class="price-item">Plumbing - Tank Cleaning</div><div class="price-val">₹1000 - ₹2500</div>
+                    <div class="price-item">Cleaning - Full Home Deep Clean</div><div class="price-val">₹1999 - ₹5999</div>
+                    <div class="price-item">Appliance Repair & Service</div><div class="price-val">₹299 - ₹1200</div>
+                </div>
+
+                <h2>Business Operations</h2>
+                <p>The Madadwala payment gateway is integrated into our mobile platform to facilitate secure wallet top-ups and direct service payments for completed jobs.</p>
+
+                <div class="contact">
+                    Support Contact: 9879338393<br>
+                    Email: support@madadwala.com
+                </div>
+
+                <div class="footer">
+                    &copy; ${new Date().getFullYear()} Madadwala Services. All rights reserved.
+                </div>
+            </div>
+        </body>
+        </html>
+    `);
 });
 
 // MongoDB Connection
