@@ -1367,10 +1367,6 @@ app.post('/api/bookings', upload.array('issueImages', 5), async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
 
 app.get('/api/bookings/customer/:uid', async (req, res) => {
     try {
