@@ -522,7 +522,7 @@ app.post('/api/users/register', upload.fields([
 ]), async (req, res) => {
     console.log(`Starting registration for UID: ${req.body.uid}`);
     try {
-        const { uid, phoneNumber, role, name, email, category, profession, aadhaarNumber } = req.body;
+        const { uid, phoneNumber, role, name, email, category, profession, aadhaarNumber, referralCode } = req.body;
 
         let profileImageUrl = '';
         let aadhaarImageUrl = '';
@@ -567,6 +567,53 @@ app.post('/api/users/register', upload.fields([
         });
 
         await newUser.save();
+
+        // Process Referral Logic
+        if (referralCode && referralCode.startsWith('MW')) {
+            const last6 = referralCode.substring(2).toUpperCase();
+            // Find inviter whose UID ends with these 6 chars
+            // Note: This might not be 100% unique but matches current frontend logic.
+            // In a production app, we'd use a unique referral code field.
+            const inviter = await User.findOne({ uid: { $regex: new RegExp(`${last6}$`, 'i') } });
+
+            if (inviter && inviter.uid !== uid) {
+                let rewardAmount = 50; // Default reward
+                try {
+                    const setting = await Settings.findOne({ key: 'referral_reward' });
+                    if (setting) rewardAmount = Number(setting.value);
+                } catch (e) {}
+
+                // Credit Invitee (New User)
+                newUser.walletBalance += rewardAmount;
+                await newUser.save();
+                await new Transaction({
+                    userUid: uid,
+                    type: 'credit',
+                    amount: rewardAmount,
+                    title: 'Referral Bonus',
+                    description: `Bonus for joining using code ${referralCode}`
+                }).save();
+
+                // Credit Inviter
+                inviter.walletBalance += rewardAmount;
+                await inviter.save();
+                await new Transaction({
+                    userUid: inviter.uid,
+                    type: 'credit',
+                    amount: rewardAmount,
+                    title: 'Referral Reward',
+                    description: `Bonus for inviting ${name || 'a new member'}`
+                }).save();
+
+                // Notify Inviter
+                sendFCMNotification(
+                    inviter.uid,
+                    'Referral Reward Credited!',
+                    `You earned ₹${rewardAmount} because ${name || 'someone'} joined using your code.`,
+                    { screen: 'wallet' }
+                );
+            }
+        }
 
         // If user is a provider, create Provider entry
         if (role === 'provider') {
