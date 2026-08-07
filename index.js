@@ -1657,15 +1657,15 @@ app.post('/api/payments/create-order', async (req, res) => {
 
         const instance = new Razorpay({ key_id, key_secret });
 
-        const { amount, bookingId } = req.body;
+        const { amount, bookingId, type, uid } = req.body;
         const options = {
             amount: Math.round(amount * 100), // amount in paise
             currency: "INR",
-            receipt: `receipt_${bookingId}`,
+            receipt: type === 'wallet' ? `wallet_${uid}_${Date.now()}` : `receipt_${bookingId}`,
         };
 
         const order = await instance.orders.create(options);
-        console.log(`Razorpay order created: ${order.id} for booking: ${bookingId}`);
+        console.log(`Razorpay order created: ${order.id} for ${type || 'booking'}: ${bookingId || uid}`);
         res.json({
             id: order.id,
             currency: order.currency,
@@ -1676,6 +1676,46 @@ app.post('/api/payments/create-order', async (req, res) => {
         console.error('Razorpay Order Error Details:', JSON.stringify(error, null, 2));
         const errorMessage = error.error?.description || error.message || "Failed to create order";
         res.status(500).json({ error: errorMessage });
+    }
+});
+
+// Verify Wallet Payment
+app.post('/api/payments/verify-wallet', async (req, res) => {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, uid, amount } = req.body;
+
+    try {
+        const crypto = require('crypto');
+        const hmac = crypto.createHmac('sha256', process.env.RAZORPAY_KEY_SECRET);
+        hmac.update(razorpay_order_id + "|" + razorpay_payment_id);
+        const generated_signature = hmac.digest('hex');
+
+        if (generated_signature === razorpay_signature) {
+            // Payment is verified
+            const user = await User.findOne({ uid });
+            if (!user) return res.status(404).json({ error: 'User not found' });
+
+            user.walletBalance += Number(amount);
+            await user.save();
+
+            // Log transaction
+            const transaction = new Transaction({
+                userUid: uid,
+                type: 'credit',
+                amount: Number(amount),
+                title: 'Wallet Top-up',
+                description: `Successfully added ₹${amount} to wallet via Razorpay`
+            });
+            await transaction.save();
+
+            logActivity(uid, 'WALLET_TOPUP', `Added ₹${amount} to wallet`);
+
+            res.json({ success: true, message: 'Wallet updated successfully', newBalance: user.walletBalance });
+        } else {
+            res.status(400).json({ success: false, message: 'Invalid payment signature' });
+        }
+    } catch (error) {
+        console.error('Wallet Verification Error:', error.message);
+        res.status(500).json({ error: error.message });
     }
 });
 
