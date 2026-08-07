@@ -1043,7 +1043,7 @@ app.get('/api/providers/:uid', async (req, res) => {
         const provider = await Provider.findOne({ uid: req.params.uid });
         const user = await User.findOne({ uid: req.params.uid });
         const services = await Service.find({ providerUid: req.params.uid });
-        const reviews = await Review.find({ providerUid: req.params.uid });
+        const reviews = await Review.find({ providerUid: req.params.uid }).sort({ createdAt: -1 });
 
         const providerDetails = {
             ...provider.toObject(),
@@ -1370,15 +1370,24 @@ app.patch('/api/bookings/:id/location', async (req, res) => {
 // Reviews
 app.post('/api/reviews', async (req, res) => {
     try {
+        const { bookingId, providerUid, rating } = req.body;
+
+        // Check if review already exists for this booking
+        const existing = await Review.findOne({ bookingId });
+        if (existing) {
+            return res.status(400).json({ error: 'Review already submitted for this booking' });
+        }
+
         const newReview = new Review(req.body);
         await newReview.save();
 
         // Update provider rating
-        const reviews = await Review.find({ providerUid: req.body.providerUid });
+        const reviews = await Review.find({ providerUid });
         const avgRating = reviews.reduce((acc, curr) => acc + curr.rating, 0) / reviews.length;
+
         await Provider.findOneAndUpdate(
-            { uid: req.body.providerUid },
-            { rating: avgRating, reviewCount: reviews.length }
+            { uid: providerUid },
+            { rating: parseFloat(avgRating.toFixed(1)), reviewCount: reviews.length }
         );
 
         res.status(201).json(newReview);
