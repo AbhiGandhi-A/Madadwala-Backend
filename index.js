@@ -1579,6 +1579,71 @@ app.post('/api/bookings/:id/complete-payment', async (req, res) => {
     }
 });
 
+app.post('/api/bookings/:id/pay-from-wallet', async (req, res) => {
+    const bookingId = req.params.id;
+    const { customerUid } = req.body;
+
+    try {
+        const booking = await Booking.findById(bookingId);
+        if (!booking) return res.status(404).json({ error: 'Booking not found' });
+        if (booking.paymentStatus === 'paid') return res.status(400).json({ error: 'Already paid' });
+
+        const customer = await User.findOne({ uid: customerUid });
+        if (!customer) return res.status(404).json({ error: 'Customer not found' });
+
+        if (customer.walletBalance < booking.totalAmount) {
+            return res.status(400).json({ error: 'Insufficient wallet balance' });
+        }
+
+        // 1. Deduct from customer
+        customer.walletBalance -= booking.totalAmount;
+        await customer.save();
+
+        await new Transaction({
+            userUid: customerUid,
+            type: 'debit',
+            amount: booking.totalAmount,
+            title: 'Booking Payment',
+            description: `Payment for ${booking.serviceName}`
+        }).save();
+
+        // 2. Update booking
+        booking.paymentStatus = 'paid';
+        booking.status = 'done';
+        await booking.save();
+
+        // 3. Credit provider
+        const providerUid = booking.providerUid;
+        if (providerUid) {
+            let commissionPercent = 15;
+            const setting = await Settings.findOne({ key: 'commission_percentage' });
+            if (setting) commissionPercent = Number(setting.value);
+
+            const partnerEarnings = Math.round(booking.totalAmount * ((100 - commissionPercent) / 100));
+            const companyCommission = booking.totalAmount - partnerEarnings;
+
+            await User.findOneAndUpdate(
+                { uid: providerUid },
+                { $inc: { walletBalance: partnerEarnings, totalEarnings: partnerEarnings, totalJobs: 1 } }
+            );
+
+            await new Transaction({
+                userUid: providerUid,
+                type: 'credit',
+                amount: partnerEarnings,
+                title: 'Job Payment',
+                description: `Payment for ${booking.serviceName} from ${booking.customerName} (Wallet Payment)`
+            }).save();
+        }
+
+        logActivity(customerUid, 'PAYMENT_WALLET', `Paid ₹${booking.totalAmount} using wallet for ${booking.serviceName}`);
+        res.json({ message: 'Payment successful using wallet' });
+    } catch (error) {
+        console.error('Wallet Payment Error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Create Razorpay Order
 app.post('/api/payments/create-order', async (req, res) => {
     try {
