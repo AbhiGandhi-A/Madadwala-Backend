@@ -387,6 +387,15 @@ const reportSchema = new mongoose.Schema({
 });
 const Report = mongoose.model('Report', reportSchema);
 
+// Booking Message Schema
+const bookingMessageSchema = new mongoose.Schema({
+    bookingId: { type: String, required: true },
+    senderUid: { type: String, required: true },
+    message: { type: String, required: true },
+    timestamp: { type: Date, default: Date.now }
+});
+const BookingMessage = mongoose.model('BookingMessage', bookingMessageSchema);
+
 // FCM Notification Helper
 const sendFCMNotification = async (uid, title, body, data = {}) => {
     try {
@@ -1505,6 +1514,28 @@ app.patch('/api/bookings/:id/reschedule', async (req, res) => {
     }
 });
 
+// Chat: Get messages for a booking
+app.get('/api/bookings/:id/messages', async (req, res) => {
+    try {
+        const messages = await BookingMessage.find({ bookingId: req.params.id }).sort({ timestamp: 1 });
+        res.json(messages);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Chat: Save a new message
+app.post('/api/bookings/messages', async (req, res) => {
+    try {
+        const { bookingId, senderUid, message } = req.body;
+        const newMessage = new BookingMessage({ bookingId, senderUid, message });
+        await newMessage.save();
+        res.status(201).json(newMessage);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.get('/api/bookings/:id', async (req, res) => {
     try {
         const booking = await Booking.findById(req.params.id);
@@ -2036,6 +2067,13 @@ io.on('connection', (socket) => {
     socket.on('join_booking', (bookingId) => {
         socket.join(bookingId);
         console.log(`[Socket] Socket ${socket.id} joined booking room: ${bookingId}`);
+    });
+
+    socket.on('send_message', (data) => {
+        const { bookingId, senderUid, message } = data;
+        console.log(`[Socket] New message for booking ${bookingId} from ${senderUid}`);
+        // Broadcast to everyone in the booking room (including the sender for simple confirmation if needed, or just others)
+        io.to(bookingId).emit('receive_message', data);
     });
 
     socket.on('update_location', (data) => {
