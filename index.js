@@ -1530,6 +1530,20 @@ app.post('/api/bookings/messages', async (req, res) => {
         const { bookingId, senderUid, message } = req.body;
         const newMessage = new BookingMessage({ bookingId, senderUid, message });
         await newMessage.save();
+
+        // Notify Receiver via FCM
+        const booking = await Booking.findById(bookingId);
+        if (booking) {
+            const receiverUid = (senderUid === booking.customerUid) ? booking.providerUid : booking.customerUid;
+            const sender = await User.findOne({ uid: senderUid });
+            sendFCMNotification(
+                receiverUid,
+                `New message from ${sender ? sender.name : 'Madadwala'}`,
+                message,
+                { bookingId: bookingId.toString(), type: 'chat', screen: 'chat' }
+            );
+        }
+
         res.status(201).json(newMessage);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -2069,11 +2083,28 @@ io.on('connection', (socket) => {
         console.log(`[Socket] Socket ${socket.id} joined booking room: ${bookingId}`);
     });
 
-    socket.on('send_message', (data) => {
+    socket.on('send_message', async (data) => {
         const { bookingId, senderUid, message } = data;
         console.log(`[Socket] New message for booking ${bookingId} from ${senderUid}`);
         // Broadcast to everyone in the booking room (including the sender for simple confirmation if needed, or just others)
         io.to(bookingId).emit('receive_message', data);
+
+        // Notify Receiver via FCM (for background/inactive users)
+        try {
+            const booking = await Booking.findById(bookingId);
+            if (booking) {
+                const receiverUid = (senderUid === booking.customerUid) ? booking.providerUid : booking.customerUid;
+                const sender = await User.findOne({ uid: senderUid });
+                sendFCMNotification(
+                    receiverUid,
+                    `New message from ${sender ? sender.name : 'Madadwala'}`,
+                    message,
+                    { bookingId: bookingId.toString(), type: 'chat', screen: 'chat' }
+                );
+            }
+        } catch (err) {
+            console.error('Error sending socket-chat FCM:', err.message);
+        }
     });
 
     socket.on('update_location', (data) => {
