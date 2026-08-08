@@ -481,6 +481,14 @@ const callSessionSchema = new mongoose.Schema({
 });
 const CallSession = mongoose.model('CallSession', callSessionSchema);
 
+// Interaction Schema (for Profile-based Chat/Call)
+const interactionSchema = new mongoose.Schema({
+    _id: String, // Deterministic ID from frontend
+    participants: [String], // [uid1, uid2]
+    createdAt: { type: Date, default: Date.now }
+});
+const Interaction = mongoose.model('Interaction', interactionSchema);
+
 // Middleware to verify Firebase ID Token
 const verifyToken = async (req, res, next) => {
     const idToken = req.headers.authorization?.split('Bearer ')[1];
@@ -1251,20 +1259,45 @@ app.post('/api/providers/:uid/services', async (req, res) => {
 });
 
 // Bookings
+app.post('/api/interactions/init', async (req, res) => {
+    const { id, participants } = req.body;
+    try {
+        await Interaction.findOneAndUpdate(
+            { _id: id },
+            { participants },
+            { upsert: true, new: true }
+        );
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.post('/api/call/start', async (req, res) => {
     const { bookingId, customerId, partnerId, callerId } = req.body;
     try {
         // Backend checks
-        const booking = await Booking.findById(bookingId);
-        if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
-        if (booking.status === 'cancelled' || booking.status === 'done') {
-            return res.status(400).json({ success: false, message: "Booking is not active" });
+        let booking = null;
+        if (mongoose.Types.ObjectId.isValid(bookingId)) {
+            booking = await Booking.findById(bookingId);
+        }
+
+        if (booking) {
+            if (booking.status === 'cancelled' || booking.status === 'done') {
+                return res.status(400).json({ success: false, message: "Booking is not active" });
+            }
+        } else {
+            // If not a booking, check if it's a registered interaction
+            const interaction = await Interaction.findById(bookingId);
+            if (!interaction && (!customerId || !partnerId)) {
+                return res.status(404).json({ success: false, message: "Booking or Interaction not found" });
+            }
         }
 
         const callSession = new CallSession({
             bookingId,
-            customerId,
-            partnerId,
+            customerId: customerId || "",
+            partnerId: partnerId || "",
             status: 'ringing'
         });
         await callSession.save();
@@ -1533,8 +1566,17 @@ app.post('/api/bookings/messages', async (req, res) => {
 
         // Notify Receiver via FCM
         const booking = await Booking.findById(bookingId);
+        let receiverUid = null;
         if (booking) {
-            const receiverUid = (senderUid === booking.customerUid) ? booking.providerUid : booking.customerUid;
+            receiverUid = (senderUid === booking.customerUid) ? booking.providerUid : booking.customerUid;
+        } else {
+            const interaction = await Interaction.findById(bookingId);
+            if (interaction) {
+                receiverUid = interaction.participants.find(p => p !== senderUid);
+            }
+        }
+
+        if (receiverUid) {
             const sender = await User.findOne({ uid: senderUid });
             sendFCMNotification(
                 receiverUid,
@@ -2092,8 +2134,17 @@ io.on('connection', (socket) => {
         // Notify Receiver via FCM (for background/inactive users)
         try {
             const booking = await Booking.findById(bookingId);
+            let receiverUid = null;
             if (booking) {
-                const receiverUid = (senderUid === booking.customerUid) ? booking.providerUid : booking.customerUid;
+                receiverUid = (senderUid === booking.customerUid) ? booking.providerUid : booking.customerUid;
+            } else {
+                const interaction = await Interaction.findById(bookingId);
+                if (interaction) {
+                    receiverUid = interaction.participants.find(p => p !== senderUid);
+                }
+            }
+
+            if (receiverUid) {
                 const sender = await User.findOne({ uid: senderUid });
                 sendFCMNotification(
                     receiverUid,
