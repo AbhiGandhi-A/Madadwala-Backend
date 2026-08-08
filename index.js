@@ -392,7 +392,8 @@ const Report = mongoose.model('Report', reportSchema);
 const bookingMessageSchema = new mongoose.Schema({
     bookingId: { type: String, required: true },
     senderUid: { type: String, required: true },
-    message: { type: String, required: true },
+    message: { type: String },
+    imageUrl: String,
     timestamp: { type: Date, default: Date.now }
 });
 const BookingMessage = mongoose.model('BookingMessage', bookingMessageSchema);
@@ -1558,10 +1559,28 @@ app.get('/api/bookings/:id/messages', async (req, res) => {
 });
 
 // Chat: Save a new message
-app.post('/api/bookings/messages', async (req, res) => {
+app.post('/api/bookings/messages', upload.single('chatImage'), async (req, res) => {
     try {
         const { bookingId, senderUid, message } = req.body;
-        const newMessage = new BookingMessage({ bookingId, senderUid, message });
+        let imageUrl = '';
+
+        if (req.file) {
+            const fileName = `chat/${bookingId}_${Date.now()}.jpg`;
+            await s3.send(new PutObjectCommand({
+                Bucket: process.env.R2_BUCKET_NAME || process.env.CLOUDFLARE_BUCKET_NAME,
+                Key: fileName,
+                Body: req.file.buffer,
+                ContentType: req.file.mimetype,
+            }));
+            imageUrl = `${process.env.R2_PUBLIC_URL}/${fileName}`;
+        }
+
+        const newMessage = new BookingMessage({
+            bookingId,
+            senderUid,
+            message: message || '',
+            imageUrl
+        });
         await newMessage.save();
 
         // Notify Receiver via FCM
@@ -1581,13 +1600,14 @@ app.post('/api/bookings/messages', async (req, res) => {
             sendFCMNotification(
                 receiverUid,
                 `New message from ${sender ? sender.name : 'Madadwala'}`,
-                message,
+                imageUrl ? 'Sent an image' : message,
                 { bookingId: bookingId.toString(), type: 'chat', screen: 'chat' }
             );
         }
 
         res.status(201).json(newMessage);
     } catch (error) {
+        console.error('Chat message error:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -2126,7 +2146,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('send_message', async (data) => {
-        const { bookingId, senderUid, message } = data;
+        const { bookingId, senderUid, message, imageUrl } = data;
         console.log(`[Socket] New message for booking ${bookingId} from ${senderUid}`);
         // Broadcast to everyone in the booking room (including the sender for simple confirmation if needed, or just others)
         io.to(bookingId).emit('receive_message', data);
@@ -2149,7 +2169,7 @@ io.on('connection', (socket) => {
                 sendFCMNotification(
                     receiverUid,
                     `New message from ${sender ? sender.name : 'Madadwala'}`,
-                    message,
+                    imageUrl ? 'Sent an image' : message,
                     { bookingId: bookingId.toString(), type: 'chat', screen: 'chat' }
                 );
             }
