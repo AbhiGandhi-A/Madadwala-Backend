@@ -2611,6 +2611,28 @@ app.get('/api/admin/reports', async (req, res) => {
     }
 });
 
+// Admin: Update report status
+app.patch('/api/admin/reports/:id', async (req, res) => {
+    try {
+        const { status } = req.body;
+        const report = await Report.findByIdAndUpdate(req.params.id, { status }, { new: true });
+        if (!report) return res.status(404).json({ error: 'Report not found' });
+        res.json({ message: 'Report status updated', report });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Admin: Get all transactions (Global)
+app.get('/api/admin/transactions', async (req, res) => {
+    try {
+        const transactions = await Transaction.find().sort({ createdAt: -1 });
+        res.json(transactions);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Admin: Send Notification/Warning to specific user
 app.post('/api/admin/send-notification', async (req, res) => {
     try {
