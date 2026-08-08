@@ -195,6 +195,7 @@ const userSchema = new mongoose.Schema({
         lng: Number
     }],
     fcmToken: String,
+    pendingReferralDiscount: { type: Number, default: 0 },
     dailyOnline: [{ type: String }], // Array of dates 'YYYY-MM-DD'
     activityLog: [{
         event: String,
@@ -592,35 +593,23 @@ app.post('/api/users/register', upload.fields([
         if (referralCode && referralCode.startsWith('MW')) {
             const last6 = referralCode.substring(2).toUpperCase();
             // Find inviter whose UID ends with these 6 chars
-            // Note: This might not be 100% unique but matches current frontend logic.
-            // In a production app, we'd use a unique referral code field.
             const inviter = await User.findOne({ uid: { $regex: new RegExp(`${last6}$`, 'i') } });
 
             if (inviter && inviter.uid !== uid) {
-                let rewardAmount = 50; // Default reward
-                try {
-                    const setting = await Settings.findOne({ key: 'referral_reward' });
-                    if (setting) rewardAmount = Number(setting.value);
-                } catch (e) {}
+                const inviteeDiscount = 50;
+                const inviterReward = 10;
 
-                // Credit Invitee (New User)
-                newUser.walletBalance += rewardAmount;
+                // Set Discount for Invitee (New User)
+                newUser.pendingReferralDiscount = inviteeDiscount;
                 await newUser.save();
-                await new Transaction({
-                    userUid: uid,
-                    type: 'credit',
-                    amount: rewardAmount,
-                    title: 'Referral Bonus',
-                    description: `Bonus for joining using code ${referralCode}`
-                }).save();
 
                 // Credit Inviter
-                inviter.walletBalance += rewardAmount;
+                inviter.walletBalance += inviterReward;
                 await inviter.save();
                 await new Transaction({
                     userUid: inviter.uid,
                     type: 'credit',
-                    amount: rewardAmount,
+                    amount: inviterReward,
                     title: 'Referral Reward',
                     description: `Bonus for inviting ${name || 'a new member'}`
                 }).save();
@@ -629,8 +618,16 @@ app.post('/api/users/register', upload.fields([
                 sendFCMNotification(
                     inviter.uid,
                     'Referral Reward Credited!',
-                    `You earned ₹${rewardAmount} because ${name || 'someone'} joined using your code.`,
+                    `You earned ₹${inviterReward} because ${name || 'someone'} joined using your code.`,
                     { screen: 'wallet' }
+                );
+
+                // Notify Invitee
+                sendFCMNotification(
+                    uid,
+                    'Welcome Discount!',
+                    `You have a ₹${inviteeDiscount} discount available for your first booking!`,
+                    { screen: 'home' }
                 );
             }
         }
@@ -1391,6 +1388,9 @@ app.post('/api/bookings', upload.array('issueImages', 5), async (req, res) => {
         await newBooking.save();
         console.log(`Booking created successfully with ID: ${newBooking._id}`);
 
+        // Reset Referral Discount if it was used
+        await User.findOneAndUpdate({ uid: customerUid }, { $set: { pendingReferralDiscount: 0 } });
+
         // Log Activity
         logActivity(customerUid, 'BOOKING_CREATED', `Booked ${serviceName} for ₹${totalAmount}`);
         logActivity(providerUid, 'NEW_JOB_RECEIVED', `Received a new booking for ${serviceName}`);
@@ -1831,7 +1831,7 @@ app.post('/api/custom-requests/:id/accept-bid', async (req, res) => {
             serviceName: customReq.category + " (Custom)",
             status: 'accepted',
             address: customReq.customerName + "'s Location", // In real app, get from customer
-            scheduledTime: "ASAP",
+            scheduledTime: "Urgent",
             totalAmount: price,
             otp: otp,
             customerLat: customReq.lat,
@@ -1876,7 +1876,7 @@ app.post('/api/custom-requests/:id/direct-accept', async (req, res) => {
             serviceName: customReq.category + " (Custom)",
             status: 'accepted',
             address: customReq.customerName + "'s Location",
-            scheduledTime: "ASAP",
+            scheduledTime: "Urgent",
             totalAmount: price,
             otp: otp,
             customerLat: customReq.lat,
