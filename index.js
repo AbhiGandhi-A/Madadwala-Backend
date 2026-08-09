@@ -1316,12 +1316,15 @@ app.post('/api/call/start', async (req, res) => {
 
         // Notify Receiver via Socket
         const caller = await User.findOne({ uid: finalCallerId });
+        let callerName = caller ? caller.name : "Partner";
+        if (finalCallerId === 'admin') callerName = "Madadwala Admin";
+
         if (io) {
             console.log(`Emitting incoming_call from ${finalCallerId} to receiver: ${receiverId}`);
             io.to(receiverId).emit("incoming_call", {
                 callId: callSession._id,
-                callerName: caller ? caller.name : "Partner",
-                customerName: caller ? caller.name : "Partner", // Backwards compatibility
+                callerName: callerName,
+                customerName: callerName, // Backwards compatibility
                 callerImage: caller ? caller.profileImage : null,
                 customerImage: caller ? caller.profileImage : null, // Backwards compatibility
                 bookingId: bookingId,
@@ -1333,12 +1336,12 @@ app.post('/api/call/start', async (req, res) => {
         sendFCMNotification(
             receiverId,
             'Incoming Call',
-            `${caller ? caller.name : 'Someone'} is calling you regarding your booking.`,
+            `${callerName} is calling you regarding your booking.`,
             {
                 type: 'call',
                 screen: 'voice_call',
                 callId: callSession._id.toString(),
-                callerName: caller ? caller.name : "Partner",
+                callerName: callerName,
                 callerImage: caller ? caller.profileImage : "",
                 bookingId: bookingId,
                 callerId: finalCallerId
