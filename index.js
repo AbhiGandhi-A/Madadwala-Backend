@@ -186,6 +186,7 @@ const userSchema = new mongoose.Schema({
     totalEarnings: { type: Number, default: 0 },
     totalJobs: { type: Number, default: 0 },
     isVerified: { type: Boolean, default: false },
+    isOnline: { type: Boolean, default: false },
     isBlocked: { type: Boolean, default: false },
     favorites: [{ type: String }], // Array of provider UIDs
     addresses: [{
@@ -1146,6 +1147,7 @@ app.get('/api/providers', async (req, res) => {
             return {
                 ...p.toObject(),
                 profileImage: user ? user.profileImage : null,
+                isOnline: user ? user.isOnline : false,
                 totalJobs: user ? user.totalJobs : 0,
                 totalEarnings: user ? user.totalEarnings : 0,
                 createdAt: user ? user.createdAt : null
@@ -1179,6 +1181,7 @@ app.get('/api/providers/:uid', async (req, res) => {
         const providerDetails = {
             ...provider.toObject(),
             profileImage: user ? user.profileImage : null,
+            isOnline: user ? user.isOnline : false,
             totalJobs: user ? user.totalJobs : 0,
             totalEarnings: user ? user.totalEarnings : 0,
             createdAt: user ? user.createdAt : null
@@ -2134,10 +2137,14 @@ app.post('/api/payments/verify-wallet', async (req, res) => {
 io.on('connection', (socket) => {
     console.log(`[Socket] New client connected: ${socket.id}`);
 
-    socket.on('join', (userId) => {
+    socket.on('join', async (userId) => {
         socket.userId = userId;
         socket.join(userId);
         console.log(`[Socket] User ${userId} joined their room (Socket ID: ${socket.id})`);
+
+        // Update online status
+        await User.findOneAndUpdate({ uid: userId }, { isOnline: true });
+        io.emit('user_status_change', { uid: userId, isOnline: true });
     });
 
     socket.on('join_booking', (bookingId) => {
@@ -2276,8 +2283,19 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
         console.log(`[Socket] Client disconnected: ${socket.id}`);
+        if (socket.userId) {
+            // Wait a bit and check if user has other connections
+            setTimeout(async () => {
+                const activeSockets = await io.in(socket.userId).fetchSockets();
+                if (activeSockets.length === 0) {
+                    await User.findOneAndUpdate({ uid: socket.userId }, { isOnline: false });
+                    io.emit('user_status_change', { uid: socket.userId, isOnline: false });
+                    console.log(`[Socket] User ${socket.userId} is now offline`);
+                }
+            }, 2000);
+        }
     });
 });
 
