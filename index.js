@@ -1618,7 +1618,32 @@ app.post('/api/bookings/messages', upload.single('chatImage'), async (req, res) 
 app.get('/api/bookings/:id', async (req, res) => {
     try {
         const booking = await Booking.findById(req.params.id);
-        res.json(booking);
+        if (!booking) return res.status(404).json({ error: 'Booking not found' });
+
+        let bookingObj = booking.toObject();
+        if (bookingObj.providerUid) {
+            // Priority 1: Fetch from User collection
+            const user = await User.findOne({ uid: bookingObj.providerUid });
+            if (user && user.profileImage) {
+                bookingObj.providerImage = user.profileImage;
+                bookingObj.providerPhone = user.phoneNumber;
+            }
+
+            // Priority 2: Fetch from Provider collection if still missing
+            if (!bookingObj.providerImage) {
+                const provider = await Provider.findOne({ uid: bookingObj.providerUid });
+                if (provider && provider.profileImage) {
+                    bookingObj.providerImage = provider.profileImage;
+                }
+            }
+
+            // Ensure name is present
+            if (!bookingObj.providerName) {
+                const partner = await User.findOne({ uid: bookingObj.providerUid });
+                bookingObj.providerName = partner ? partner.name : "Partner";
+            }
+        }
+        res.json(bookingObj);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
