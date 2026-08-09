@@ -2573,6 +2573,22 @@ app.post('/api/users/bank-details/:uid', async (req, res) => {
 });
 
 // Reports
+app.post('/api/sos', async (req, res) => {
+    try {
+        const { uid, name, location, bookingId } = req.body;
+        // Notify admin via Socket
+        if (io) {
+            io.emit('emergency_sos', { uid, name, location, bookingId, timestamp: new Date() });
+        }
+        // Log activity
+        logActivity(uid, 'EMERGENCY_SOS', `User triggered emergency SOS alert`);
+
+        res.json({ message: 'Emergency alert sent to admin' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.post('/api/reports', upload.array('evidence', 5), async (req, res) => {
     try {
         const { reporterUid, reportedUid, reason, description } = req.body;
