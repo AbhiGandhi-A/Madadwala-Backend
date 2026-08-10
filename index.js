@@ -799,6 +799,15 @@ app.get('/api/admin/withdrawals/pending', async (req, res) => {
     }
 });
 
+app.get('/api/admin/withdrawals/all', async (req, res) => {
+    try {
+        const withdrawals = await Withdrawal.find().sort({ createdAt: -1 });
+        res.json(withdrawals);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.patch('/api/admin/withdrawals/:id', async (req, res) => {
     try {
         const { status, rejectionReason } = req.body;
@@ -828,6 +837,13 @@ app.patch('/api/admin/withdrawals/:id', async (req, res) => {
                     description: `Refund for rejected withdrawal of ₹${withdrawal.amount}. Reason: ${withdrawal.rejectionReason}`
                 });
                 await transaction.save();
+
+                sendFCMNotification(
+                    withdrawal.providerUid,
+                    'Withdrawal Rejected',
+                    `Your withdrawal request of ₹${withdrawal.amount} was rejected. Reason: ${withdrawal.rejectionReason}. The amount has been refunded to your wallet.`,
+                    { screen: 'withdrawals' }
+                );
             }
             return res.json({ message: 'Withdrawal rejected and amount refunded' });
         }
@@ -867,12 +883,28 @@ app.patch('/api/admin/withdrawals/:id', async (req, res) => {
                     withdrawal.status = 'paid';
                     withdrawal.payoutId = payout.id;
                     await withdrawal.save();
+
+                    sendFCMNotification(
+                        withdrawal.providerUid,
+                        'Withdrawal Successful!',
+                        `Your withdrawal of ₹${withdrawal.amount} has been processed and sent to your bank account.`,
+                        { screen: 'withdrawals' }
+                    );
+
                     return res.json({ message: 'Payout successful', payoutId: payout.id });
                 } else {
                     // Fallback if RazorpayX is not configured but admin wants to mark as paid
                     withdrawal.status = 'paid';
                     withdrawal.payoutId = 'MANUAL_' + Date.now();
                     await withdrawal.save();
+
+                    sendFCMNotification(
+                        withdrawal.providerUid,
+                        'Withdrawal Successful!',
+                        `Your withdrawal of ₹${withdrawal.amount} has been marked as paid.`,
+                        { screen: 'withdrawals' }
+                    );
+
                     return res.json({ message: 'Withdrawal marked as paid (Manual/No RazorpayX)' });
                 }
             } catch (payoutError) {
