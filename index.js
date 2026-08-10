@@ -1774,6 +1774,16 @@ app.patch('/api/bookings/:id/location', async (req, res) => {
 });
 
 // Reviews
+app.get('/api/reviews/booking/:bookingId', async (req, res) => {
+    try {
+        const review = await Review.findOne({ bookingId: req.params.bookingId });
+        if (!review) return res.status(404).json({ message: 'Review not found' });
+        res.json(review);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.post('/api/reviews', async (req, res) => {
     try {
         const { bookingId, providerUid, rating } = req.body;
@@ -2625,7 +2635,12 @@ app.put('/api/admin/offers/:id', async (req, res) => {
 
 app.post('/api/users/bank-details/:uid', async (req, res) => {
     try {
-        await User.findOneAndUpdate({ uid: req.params.uid }, { bankDetails: req.body });
+        const { accountNumber, ifscCode, accountHolderName } = req.body;
+        await User.findOneAndUpdate(
+            { uid: req.params.uid },
+            { $set: { bankDetails: { accountNumber, ifscCode, accountHolderName } } },
+            { new: true, upsert: true }
+        );
         res.json({ message: 'Bank details updated' });
     } catch (error) {
         res.status(500).json({ error: error.message });
