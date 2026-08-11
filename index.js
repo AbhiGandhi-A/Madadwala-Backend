@@ -1213,6 +1213,11 @@ app.get('/api/providers/:uid', async (req, res) => {
         const providerDetails = {
             ...provider.toObject(),
             profileImage: user ? user.profileImage : null,
+            email: user ? user.email : null,
+            phoneNumber: user ? user.phoneNumber : null,
+            aadhaarNumber: user ? user.aadhaarNumber : null,
+            verificationDate: user ? user.verificationDate : null,
+            profession: user ? user.profession : null,
             isOnline: user ? user.isOnline : false,
             totalJobs: user ? user.totalJobs : 0,
             totalEarnings: user ? user.totalEarnings : 0,
