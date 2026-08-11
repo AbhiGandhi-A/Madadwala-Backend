@@ -351,6 +351,14 @@ const bannerSchema = new mongoose.Schema({
 });
 const Banner = mongoose.model('Banner', bannerSchema);
 
+// Operational City Schema
+const operationalCitySchema = new mongoose.Schema({
+    name: { type: String, required: true, unique: true },
+    isActive: { type: Boolean, default: true },
+    createdAt: { type: Date, default: Date.now }
+});
+const OperationalCity = mongoose.model('OperationalCity', operationalCitySchema);
+
 // Settings Schema
 const settingsSchema = new mongoose.Schema({
     key: { type: String, required: true, unique: true },
@@ -1167,17 +1175,47 @@ app.post('/api/admin/approve-provider', async (req, res) => {
 
 // Update provider list for customers to only see verified ones
 app.get('/api/providers', async (req, res) => {
-    const { category } = req.query;
+    const { category, lat, lng } = req.query;
     try {
         const query = { isVerified: true };
         if (category) query.category = category;
         const providers = await Provider.find(query);
 
+        // Helper to calculate distance
+        const getDistance = (lat1, lon1, lat2, lon2) => {
+            if (!lat1 || !lon1 || !lat2 || !lon2) return Infinity;
+            const R = 6371;
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+        };
+
+        // Filter by 50km if lat/lng provided
+        let filteredProviders = providers;
+        if (lat && lng) {
+            filteredProviders = providers.filter(p => {
+                const distance = getDistance(parseFloat(lat), parseFloat(lng), p.lat, p.lng);
+                return distance <= 50;
+            });
+        }
+
         // Fetch details from User collection for each provider
-        const providersWithDetails = await Promise.all(providers.map(async (p) => {
+        const providersWithDetails = await Promise.all(filteredProviders.map(async (p) => {
             const user = await User.findOne({ uid: p.uid });
+
+            let distanceStr = "Nearby";
+            if (lat && lng && p.lat && p.lng) {
+                const dist = getDistance(parseFloat(lat), parseFloat(lng), p.lat, p.lng);
+                distanceStr = `${dist.toFixed(1)} km away`;
+            }
+
             return {
                 ...p.toObject(),
+                distance: distanceStr,
                 profileImage: user ? user.profileImage : null,
                 isOnline: user ? user.isOnline : false,
                 totalJobs: user ? user.totalJobs : 0,
@@ -2637,6 +2675,36 @@ app.put('/api/admin/offers/:id', async (req, res) => {
     try {
         await Offer.findByIdAndUpdate(req.params.id, req.body);
         res.json({ message: 'Offer updated' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Operational Cities Management
+app.get('/api/operational-cities', async (req, res) => {
+    try {
+        const cities = await OperationalCity.find().sort({ name: 1 });
+        res.json(cities);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/admin/operational-cities', async (req, res) => {
+    try {
+        const { name } = req.body;
+        const newCity = new OperationalCity({ name });
+        await newCity.save();
+        res.status(201).json(newCity);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.delete('/api/admin/operational-cities/:id', async (req, res) => {
+    try {
+        await OperationalCity.findByIdAndDelete(req.params.id);
+        res.json({ message: 'City removed successfully' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
