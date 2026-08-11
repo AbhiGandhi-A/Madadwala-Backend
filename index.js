@@ -407,6 +407,15 @@ const bookingMessageSchema = new mongoose.Schema({
 });
 const BookingMessage = mongoose.model('BookingMessage', bookingMessageSchema);
 
+// Location Interest Schema
+const locationInterestSchema = new mongoose.Schema({
+    uid: String,
+    cityName: { type: String, required: true },
+    fcmToken: String,
+    createdAt: { type: Date, default: Date.now }
+});
+const LocationInterest = mongoose.model('LocationInterest', locationInterestSchema);
+
 // FCM Notification Helper
 const sendFCMNotification = async (uid, title, body, data = {}) => {
     try {
@@ -2695,7 +2704,59 @@ app.post('/api/admin/operational-cities', async (req, res) => {
         const { name } = req.body;
         const newCity = new OperationalCity({ name });
         await newCity.save();
+
+        // Notify interested users
+        const interests = await LocationInterest.find({ cityName: { $regex: new RegExp(`^${name}$`, 'i') } });
+        if (interests.length > 0) {
+            const uids = interests.map(i => i.uid).filter(id => id);
+            if (uids.length > 0) {
+                await broadcastFCMNotification(
+                    uids,
+                    'We are now live!',
+                    `Madadwala is now available in ${name}. Book your first service now!`,
+                    { screen: 'home', city: name }
+                );
+            }
+            // Also notify those with only FCM tokens (if any)
+            for (const interest of interests) {
+                if (interest.fcmToken && !interest.uid) {
+                    try {
+                        await admin.messaging().send({
+                            notification: {
+                                title: 'We are now live!',
+                                body: `Madadwala is now available in ${interest.cityName}. Book your first service now!`
+                            },
+                            token: interest.fcmToken
+                        });
+                    } catch (e) { console.error("FCM direct error:", e.message); }
+                }
+            }
+            // Cleanup interests for this city
+            await LocationInterest.deleteMany({ cityName: { $regex: new RegExp(`^${name}$`, 'i') } });
+        }
+
         res.status(201).json(newCity);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/location-interest', async (req, res) => {
+    try {
+        const { uid, cityName, fcmToken } = req.body;
+        // Check if already registered to avoid duplicates
+        const existing = await LocationInterest.findOne({
+            $or: [
+                { uid, cityName: { $regex: new RegExp(`^${cityName}$`, 'i') } },
+                { fcmToken, cityName: { $regex: new RegExp(`^${cityName}$`, 'i') } }
+            ]
+        });
+
+        if (!existing) {
+            const newInterest = new LocationInterest({ uid, cityName, fcmToken });
+            await newInterest.save();
+        }
+        res.json({ message: 'Interest registered successfully' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
