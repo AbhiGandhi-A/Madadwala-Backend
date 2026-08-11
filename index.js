@@ -465,14 +465,13 @@ const logActivity = async (uid, event, description) => {
 const broadcastFCMNotification = async (uids, title, body, data = {}) => {
     try {
         const users = await User.find({ uid: { $in: uids }, fcmToken: { $exists: true } });
-        const tokens = users.map(u => u.fcmToken).filter(t => t);
+        const tokens = [...new Set(users.map(u => u.fcmToken).filter(t => t))];
 
         if (tokens.length === 0) return;
 
-        const message = {
+        const messageTemplate = {
             notification: { title, body },
             data: { ...data, title, body },
-            tokens: tokens,
             android: {
                 priority: 'high',
                 notification: {
@@ -481,8 +480,12 @@ const broadcastFCMNotification = async (uids, title, body, data = {}) => {
             }
         };
 
-        const response = await admin.messaging().sendMulticast(message);
-        console.log(`FCM: Broadcast sent to ${response.successCount} users.`);
+        for (let i = 0; i < tokens.length; i += 500) {
+            const chunk = tokens.slice(i, i + 500);
+            const message = { ...messageTemplate, tokens: chunk };
+            const response = await admin.messaging().sendEachForMulticast(message);
+            console.log(`FCM: Broadcast sent to ${response.successCount} users.`);
+        }
     } catch (error) {
         console.error(`FCM: Error in broadcast:`, error.message);
     }
@@ -2708,29 +2711,42 @@ app.post('/api/admin/operational-cities', async (req, res) => {
         // Notify interested users
         const interests = await LocationInterest.find({ cityName: { $regex: new RegExp(`^${name}$`, 'i') } });
         if (interests.length > 0) {
-            const uids = interests.map(i => i.uid).filter(id => id);
-            if (uids.length > 0) {
-                await broadcastFCMNotification(
-                    uids,
-                    'We are now live!',
-                    `Madadwala is now available in ${name}. Book your first service now!`,
-                    { screen: 'home', city: name }
-                );
-            }
-            // Also notify those with only FCM tokens (if any)
-            for (const interest of interests) {
-                if (interest.fcmToken && !interest.uid) {
-                    try {
-                        await admin.messaging().send({
+            // Collect all unique tokens
+            const tokens = [...new Set(interests.map(i => i.fcmToken).filter(t => t))];
+
+            if (tokens.length > 0) {
+                const title = 'We are now live!';
+                const body = `Madadwala is now available in ${name}. Book your first service now!`;
+
+                // Split tokens into chunks of 500 (FCM limit for multicast)
+                for (let i = 0; i < tokens.length; i += 500) {
+                    const chunk = tokens.slice(i, i + 500);
+                    const message = {
+                        notification: { title, body },
+                        data: {
+                            screen: 'home',
+                            city: name,
+                            title: title,
+                            body: body
+                        },
+                        tokens: chunk,
+                        android: {
+                            priority: 'high',
                             notification: {
-                                title: 'We are now live!',
-                                body: `Madadwala is now available in ${interest.cityName}. Book your first service now!`
-                            },
-                            token: interest.fcmToken
-                        });
-                    } catch (e) { console.error("FCM direct error:", e.message); }
+                                channel_id: 'madadwala_notifications'
+                            }
+                        }
+                    };
+
+                    try {
+                        const response = await admin.messaging().sendEachForMulticast(message);
+                        console.log(`FCM: Launch notification sent to ${response.successCount} users in ${name}`);
+                    } catch (e) {
+                        console.error(`FCM: Error in city launch broadcast for ${name}:`, e.message);
+                    }
                 }
             }
+
             // Cleanup interests for this city
             await LocationInterest.deleteMany({ cityName: { $regex: new RegExp(`^${name}$`, 'i') } });
         }
