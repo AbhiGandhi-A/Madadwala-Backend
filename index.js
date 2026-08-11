@@ -1240,6 +1240,10 @@ app.patch('/api/providers/:uid/availability', async (req, res) => {
         }
 
         await Provider.findOneAndUpdate({ uid: req.params.uid }, { isAvailable });
+
+        // Notify via socket
+        io.emit('user_status_change', { uid: req.params.uid, isAvailable });
+
         res.json({ message: 'Availability updated' });
     } catch (error) {
         res.status(500).json({ error: error.message });
