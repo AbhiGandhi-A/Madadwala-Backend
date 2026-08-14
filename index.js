@@ -1751,7 +1751,20 @@ app.patch('/api/bookings/:id', async (req, res) => {
         if (scheduledTime) update.scheduledTime = scheduledTime;
         if (partnerComment) update.partnerComment = partnerComment;
 
-        const booking = await Booking.findByIdAndUpdate(req.params.id, update, { new: true });
+        const booking = await Booking.findById(req.params.id);
+        if (!booking) return res.status(404).json({ error: 'Booking not found' });
+
+        // Check wallet balance if accepting
+        if (status === 'accepted') {
+            const provider = await User.findOne({ uid: booking.providerUid });
+            if (provider && provider.walletBalance <= -100) {
+                return res.status(400).json({
+                    error: 'Insufficient wallet balance. Please maintain a balance above -₹100 to accept new bookings.'
+                });
+            }
+        }
+
+        const updatedBooking = await Booking.findByIdAndUpdate(req.params.id, update, { new: true });
 
         // Log Activity
         if (status && booking) {
@@ -1942,6 +1955,13 @@ app.patch('/api/custom-requests/:id/status', async (req, res) => {
 app.post('/api/custom-requests/:id/bid', async (req, res) => {
     try {
         const { providerUid, providerName, price } = req.body;
+        const user = await User.findOne({ uid: providerUid });
+        if (user && user.walletBalance <= -100) {
+            return res.status(400).json({
+                error: 'Insufficient wallet balance. Please maintain a balance above -₹100 to place bids.'
+            });
+        }
+
         const request = await CustomRequest.findById(req.params.id);
         if (!request) return res.status(404).json({ error: 'Request not found' });
 
@@ -2008,6 +2028,13 @@ app.post('/api/custom-requests/:id/accept-bid', async (req, res) => {
 app.post('/api/custom-requests/:id/direct-accept', async (req, res) => {
     try {
         const { providerUid, providerName } = req.body;
+        const user = await User.findOne({ uid: providerUid });
+        if (user && user.walletBalance <= -100) {
+            return res.status(400).json({
+                error: 'Insufficient wallet balance. Please maintain a balance above -₹100 to accept bookings.'
+            });
+        }
+
         const customReq = await CustomRequest.findById(req.params.id);
         if (!customReq) return res.status(404).json({ error: 'Request not found' });
         if (customReq.status !== 'pending') return res.status(400).json({ error: 'Request already processed' });
