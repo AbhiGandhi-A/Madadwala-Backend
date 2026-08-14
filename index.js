@@ -1497,7 +1497,7 @@ app.post('/api/bookings', upload.array('issueImages', 5), async (req, res) => {
         sendFCMNotification(
             providerUid,
             'New Booking Received!',
-            `You have a new booking from ${customerName} for ${serviceName}.`,
+            `You have a new booking from ${customerName || 'a customer'} for ${serviceName}.`,
             { bookingId: newBooking._id.toString(), screen: 'active_job' }
         );
 
@@ -1787,15 +1787,22 @@ app.patch('/api/bookings/:id', async (req, res) => {
             let message = `Your booking for ${booking.serviceName} status is now: ${status.replace('_', ' ')}.`;
             let screen = 'tracking';
 
+            // Fetch provider name if missing or "undefined"
+            let pName = booking.providerName;
+            if (!pName || pName === 'undefined') {
+                const provider = await User.findOne({ uid: booking.providerUid });
+                pName = provider ? provider.name : "Your partner";
+            }
+
             if (status === 'accepted') {
                 title = 'Booking Accepted!';
-                message = `${booking.providerName} has accepted your booking for ${booking.serviceName}.`;
+                message = `${pName} has accepted your booking for ${booking.serviceName}.`;
             } else if (status === 'on_the_way') {
                 title = 'Partner is on the way!';
-                message = `${booking.providerName} is heading to your location.`;
+                message = `${pName} is heading to your location.`;
             } else if (status === 'arrived') {
                 title = 'Partner Arrived!';
-                message = `${booking.providerName} has arrived at your location.`;
+                message = `${pName} has arrived at your location.`;
             } else if (status === 'done') {
                 title = 'Service Completed!';
                 message = `Your service for ${booking.serviceName} has been completed. Please proceed to payment.`;
@@ -1981,7 +1988,7 @@ app.post('/api/custom-requests/:id/bid', async (req, res) => {
         sendFCMNotification(
             request.customerUid,
             'New Bid Received!',
-            `${providerName} has placed a bid of ₹${price} on your request.`,
+            `${providerName || 'A partner'} has placed a bid of ₹${price} on your request.`,
             { requestId: request._id.toString(), screen: 'notifications' }
         );
 
