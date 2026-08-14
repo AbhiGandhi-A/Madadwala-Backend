@@ -1659,7 +1659,7 @@ app.get('/api/bookings/:id/messages', async (req, res) => {
 app.post('/api/bookings/messages', upload.single('chatImage'), async (req, res) => {
     try {
         const { bookingId, senderUid, message } = req.body;
-        let imageUrl = '';
+        let imageUrl = null;
 
         if (req.file) {
             const fileName = `chat/${bookingId}_${Date.now()}.jpg`;
@@ -1735,6 +1735,15 @@ app.get('/api/bookings/:id', async (req, res) => {
             if (!bookingObj.providerName) {
                 const partner = await User.findOne({ uid: bookingObj.providerUid });
                 bookingObj.providerName = partner ? partner.name : "Partner";
+            }
+        }
+
+        if (bookingObj.customerUid) {
+            const customer = await User.findOne({ uid: bookingObj.customerUid });
+            if (customer) {
+                bookingObj.customerImage = customer.profileImage;
+                if (!bookingObj.customerName) bookingObj.customerName = customer.name;
+                if (!bookingObj.customerPhone) bookingObj.customerPhone = customer.phoneNumber;
             }
         }
         res.json(bookingObj);
