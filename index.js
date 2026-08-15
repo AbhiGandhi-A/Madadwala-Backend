@@ -1328,7 +1328,7 @@ app.patch('/api/providers/:uid/availability', async (req, res) => {
 app.patch('/api/providers/:uid/categories', async (req, res) => {
     const { uid } = req.params;
     const { categories } = req.body;
-    console.log(`[Categories] RECEIVED update request for ${uid}:`, categories);
+    console.log(`[Categories] Update Request for ${uid}:`, categories);
 
     try {
         if (!categories || !Array.isArray(categories)) {
@@ -1337,20 +1337,36 @@ app.patch('/api/providers/:uid/categories', async (req, res) => {
 
         const mainCategory = categories.length > 0 ? categories[0] : "Professional";
 
-        // Update both User and Provider collections
+        // Update User using findOneAndUpdate to bypass full document validation
         const userUpdate = await User.findOneAndUpdate(
             { uid: uid },
-            { $set: { categories: categories, category: mainCategory } },
+            {
+                $set: {
+                    categories: categories,
+                    category: mainCategory
+                }
+            },
             { new: true }
         );
 
-        const providerUpdate = await Provider.findOneAndUpdate(
+        if (!userUpdate) {
+            console.error(`[Categories] User not found: ${uid}`);
+            return res.status(404).json({ error: 'User profile not found', message: 'User profile not found' });
+        }
+
+        // Update or Create Provider document
+        await Provider.findOneAndUpdate(
             { uid: uid },
-            { $set: { categories: categories, category: mainCategory } },
-            { new: true }
+            {
+                $set: {
+                    categories: categories,
+                    category: mainCategory
+                }
+            },
+            { upsert: true, new: true }
         );
 
-        console.log(`[Categories] DB Update completed for ${uid}. User Found: ${!!userUpdate}, Provider Found: ${!!providerUpdate}`);
+        console.log(`[Categories] Successfully updated categories for ${uid}`);
 
         res.json({
             success: true,
@@ -1358,8 +1374,8 @@ app.patch('/api/providers/:uid/categories', async (req, res) => {
             categories: categories
         });
     } catch (error) {
-        console.error('[Categories] Update error:', error);
-        res.status(500).json({ error: error.message });
+        console.error('[Categories] Critical error:', error);
+        res.status(500).json({ error: 'Internal Server Error: ' + error.message });
     }
 });
 
