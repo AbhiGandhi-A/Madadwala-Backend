@@ -1315,13 +1315,39 @@ app.patch('/api/providers/:uid/availability', async (req, res) => {
 });
 
 app.patch('/api/providers/:uid/categories', async (req, res) => {
+    const { uid } = req.params;
+    const { categories } = req.body;
+    console.log(`[Categories] Updating for ${uid}:`, categories);
+
     try {
-        const { categories } = req.body; // Array of strings
-        const mainCategory = categories.length > 0 ? categories[0] : "";
-        await User.findOneAndUpdate({ uid: req.params.uid }, { category: mainCategory, categories });
-        await Provider.findOneAndUpdate({ uid: req.params.uid }, { category: mainCategory, categories });
-        res.json({ message: 'Categories updated successfully' });
+        if (!categories || !Array.isArray(categories)) {
+            return res.status(400).json({ error: 'Categories must be an array' });
+        }
+
+        const mainCategory = categories.length > 0 ? categories[0] : "Other";
+
+        // Update both User and Provider collections
+        const user = await User.findOneAndUpdate(
+            { uid: uid },
+            { $set: { categories: categories, category: mainCategory } },
+            { new: true }
+        );
+
+        const provider = await Provider.findOneAndUpdate(
+            { uid: uid },
+            { $set: { categories: categories, category: mainCategory } },
+            { new: true }
+        );
+
+        console.log(`[Categories] Update success for ${uid}. User categories: ${user?.categories}`);
+
+        res.json({
+            success: true,
+            message: 'Categories updated successfully',
+            categories: categories
+        });
     } catch (error) {
+        console.error('[Categories] Update error:', error);
         res.status(500).json({ error: error.message });
     }
 });
