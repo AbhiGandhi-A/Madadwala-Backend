@@ -540,7 +540,10 @@ app.get('/api/users/check', async (req, res) => {
         }
 
         if (user) {
-            res.json({ exists: true, user });
+            // Ensure categories is at least an empty array if missing
+            const userObj = user.toObject();
+            if (!userObj.categories) userObj.categories = [];
+            res.json({ exists: true, user: userObj });
         } else {
             res.json({ exists: false });
         }
