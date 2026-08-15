@@ -1325,37 +1325,37 @@ app.patch('/api/providers/:uid/availability', async (req, res) => {
     }
 });
 
-app.patch('/api/providers/:uid/categories', async (req, res) => {
+app.post('/api/providers/:uid/categories-update', async (req, res) => {
     const { uid } = req.params;
     const { categories } = req.body;
     console.log(`[Categories] Update Request for ${uid}:`, categories);
 
     try {
         if (!categories || !Array.isArray(categories)) {
+            console.error('[Categories] Invalid body:', req.body);
             return res.status(400).json({ error: 'Categories must be an array' });
         }
 
         const mainCategory = categories.length > 0 ? categories[0] : "Professional";
 
-        // Update User using findOneAndUpdate to bypass full document validation
-        const userUpdate = await User.findOneAndUpdate(
+        // Update User using direct update
+        const userUpdate = await User.updateOne(
             { uid: uid },
             {
                 $set: {
                     categories: categories,
                     category: mainCategory
                 }
-            },
-            { new: true }
+            }
         );
 
-        if (!userUpdate) {
+        if (userUpdate.matchedCount === 0) {
             console.error(`[Categories] User not found: ${uid}`);
             return res.status(404).json({ error: 'User profile not found', message: 'User profile not found' });
         }
 
         // Update or Create Provider document
-        await Provider.findOneAndUpdate(
+        await Provider.updateOne(
             { uid: uid },
             {
                 $set: {
@@ -1363,7 +1363,7 @@ app.patch('/api/providers/:uid/categories', async (req, res) => {
                     category: mainCategory
                 }
             },
-            { upsert: true, new: true }
+            { upsert: true }
         );
 
         console.log(`[Categories] Successfully updated categories for ${uid}`);
