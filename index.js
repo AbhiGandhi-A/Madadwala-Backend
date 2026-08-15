@@ -1269,22 +1269,30 @@ app.get('/api/providers/:uid', async (req, res) => {
         const services = await Service.find({ providerUid: req.params.uid });
         const reviews = await Review.find({ providerUid: req.params.uid }).sort({ createdAt: -1 });
 
+        if (!provider && !user) return res.status(404).json({ error: 'Provider not found' });
+
+        const providerObj = provider ? provider.toObject() : {};
+        const userObj = user ? user.toObject() : {};
+
         const providerDetails = {
-            ...provider.toObject(),
-            profileImage: user ? user.profileImage : null,
-            email: user ? user.email : null,
-            phoneNumber: user ? user.phoneNumber : null,
-            aadhaarNumber: user ? user.aadhaarNumber : null,
-            verificationDate: user ? user.verificationDate : null,
-            profession: user ? user.profession : null,
-            isOnline: user ? user.isOnline : false,
-            totalJobs: user ? user.totalJobs : 0,
-            totalEarnings: user ? user.totalEarnings : 0,
-            createdAt: user ? user.createdAt : null
+            ...providerObj,
+            categories: (providerObj.categories && providerObj.categories.length > 0) ? providerObj.categories : (userObj.categories || []),
+            category: providerObj.category || userObj.category || "Professional",
+            profileImage: userObj.profileImage || null,
+            email: userObj.email || null,
+            phoneNumber: userObj.phoneNumber || null,
+            aadhaarNumber: userObj.aadhaarNumber || null,
+            verificationDate: userObj.verificationDate || null,
+            profession: userObj.profession || null,
+            isOnline: userObj.isOnline || false,
+            totalJobs: userObj.totalJobs || 0,
+            totalEarnings: userObj.totalEarnings || 0,
+            createdAt: userObj.createdAt || null
         };
 
         res.json({ provider: providerDetails, services, reviews });
     } catch (error) {
+        console.error('Get Provider Details Error:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -1317,29 +1325,29 @@ app.patch('/api/providers/:uid/availability', async (req, res) => {
 app.patch('/api/providers/:uid/categories', async (req, res) => {
     const { uid } = req.params;
     const { categories } = req.body;
-    console.log(`[Categories] Updating for ${uid}:`, categories);
+    console.log(`[Categories] RECEIVED update request for ${uid}:`, categories);
 
     try {
         if (!categories || !Array.isArray(categories)) {
             return res.status(400).json({ error: 'Categories must be an array' });
         }
 
-        const mainCategory = categories.length > 0 ? categories[0] : "Other";
+        const mainCategory = categories.length > 0 ? categories[0] : "Professional";
 
         // Update both User and Provider collections
-        const user = await User.findOneAndUpdate(
+        const userUpdate = await User.findOneAndUpdate(
             { uid: uid },
             { $set: { categories: categories, category: mainCategory } },
             { new: true }
         );
 
-        const provider = await Provider.findOneAndUpdate(
+        const providerUpdate = await Provider.findOneAndUpdate(
             { uid: uid },
             { $set: { categories: categories, category: mainCategory } },
             { new: true }
         );
 
-        console.log(`[Categories] Update success for ${uid}. User categories: ${user?.categories}`);
+        console.log(`[Categories] DB Update completed for ${uid}. User Found: ${!!userUpdate}, Provider Found: ${!!providerUpdate}`);
 
         res.json({
             success: true,
