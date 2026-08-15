@@ -171,6 +171,7 @@ const userSchema = new mongoose.Schema({
     profileImage: String,
     aadhaarImage: String,
     category: String,
+    categories: [String],
     profession: String,
     aadhaarNumber: String,
     verificationDate: String,
@@ -252,6 +253,7 @@ const providerSchema = new mongoose.Schema({
     distance: String,
     startingPrice: Number,
     category: String,
+    categories: [String],
     bio: String,
     gallery: [String],
     isVerified: { type: Boolean, default: false },
@@ -604,6 +606,7 @@ app.post('/api/users/register', upload.fields([
             profileImage: profileImageUrl,
             aadhaarImage: aadhaarImageUrl,
             category: category,
+            categories: category ? [category] : [],
             profession: profession,
             aadhaarNumber: aadhaarNumber,
             isVerified: role === 'customer' // Customers verified by default
@@ -660,6 +663,7 @@ app.post('/api/users/register', upload.fields([
                 uid,
                 name,
                 category: category || 'Other',
+                categories: category ? [category] : ['Other'],
                 startingPrice: 0,
                 bio: '',
                 isVerified: false // Explicitly false for new providers
@@ -1190,7 +1194,12 @@ app.get('/api/providers', async (req, res) => {
     const { category, lat, lng } = req.query;
     try {
         const query = { isVerified: true };
-        if (category) query.category = category;
+        if (category) {
+            query.$or = [
+                { category: category },
+                { categories: category }
+            ];
+        }
         const providers = await Provider.find(query);
 
         // Helper to calculate distance
@@ -1300,6 +1309,18 @@ app.patch('/api/providers/:uid/availability', async (req, res) => {
         io.emit('user_status_change', { uid: req.params.uid, isAvailable });
 
         res.json({ message: 'Availability updated' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.patch('/api/providers/:uid/categories', async (req, res) => {
+    try {
+        const { categories } = req.body; // Array of strings
+        const mainCategory = categories.length > 0 ? categories[0] : "";
+        await User.findOneAndUpdate({ uid: req.params.uid }, { category: mainCategory, categories });
+        await Provider.findOneAndUpdate({ uid: req.params.uid }, { category: mainCategory, categories });
+        res.json({ message: 'Categories updated successfully' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -1908,7 +1929,10 @@ app.post('/api/custom-requests', async (req, res) => {
 
         // Broadcast to relevant providers
         const providers = await Provider.find({
-            category: newRequest.category,
+            $or: [
+                { category: newRequest.category },
+                { categories: newRequest.category }
+            ],
             isAvailable: true,
             isVerified: true
         });
